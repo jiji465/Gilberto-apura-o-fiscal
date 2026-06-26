@@ -213,7 +213,12 @@ export function computeApuracao(cd: ClientData, params: ParametrosFiscais = PARA
   // ---------- SIMPLES NACIONAL ----------
   let sn: SnInfo | null = null
   if (regime === "Simples Nacional") {
-    const rbt12 = parseBR(cd.rbt12)
+    // Robustez: sem RBT12 informado (entrada manual incompleta), anualiza a receita
+    // do mês como proxy — evita faixa/DAS zerados ("0ª faixa", carga 0%) quando há
+    // faturamento. O PGDAS-D sempre preenche o RBT12, então o fallback só atua na
+    // digitação manual incompleta.
+    let rbt12 = parseBR(cd.rbt12)
+    if (rbt12 <= 0 && revenue > 0) rbt12 = revenue * 12
     const folha12 = parseBR(cd.folha12m)
     const fatorR = calcFatorR(folha12, rbt12)
     const anexoBase = cd.anexo || "Anexo III"
