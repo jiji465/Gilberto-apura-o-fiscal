@@ -1,0 +1,36 @@
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Spectral:wght@400;500;600;700&family=Archivo+Narrow:wght@500;600;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #f3f1ec;
+  --card: #ffffff;
+  --ink: #1d2733;
+  --muted: #6b7280;
+  --line: #e7e1d6;
+  --navy: #0B2A4A;
+  --gold: #E8A53D;
+}
+
+html, body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Archivo", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* utilitários simples reaproveitados nas telas (fora do relatório) */
+.btn { @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-semibold transition-colors; }
+.btn-primary { @apply bg-[var(--navy)] text-white hover:bg-[#16456f]; }
+.btn-gold { @apply bg-[var(--gold)] text-white hover:bg-[#cf8a1e]; }
+.btn-outline { @apply border border-[var(--line)] bg-white text-[var(--ink)] hover:bg-[#faf8f3]; }
+.btn:disabled { @apply opacity-50 pointer-events-none; }
+.card { @apply rounded-xl border border-[var(--line)] bg-white; }
+.input { @apply w-full rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--navy)] focus:ring-1 focus:ring-[var(--navy)]; }
+.label { @apply block text-xs font-semibold text-[var(--muted)] mb-1; }
+.chip { @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold; }
+
+@media print {
+  .no-print { display: none !important; }
+}
