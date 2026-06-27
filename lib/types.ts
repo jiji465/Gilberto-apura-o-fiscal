@@ -31,12 +31,18 @@ export interface ClientData {
   regime: Regime
   atividade: Atividade
   anexo?: Anexo
+  /** Anexo III: marca que a atividade é sujeita ao Fator R (cai p/ Anexo V se < 28%).
+   *  Anexo V já é sempre sujeito (sobe p/ III se ≥ 28%), independente deste flag. */
+  sujeitoFatorR?: boolean
   // MEI
   meiCategoria?: string
   meiDasFixo?: string
   // mês
   revenue?: string
   rbt12?: string
+  /** Lucro Presumido: receita acumulada do TRIMESTRE (base do IRPJ/CSLL trimestral).
+   *  Vazio ⇒ usa receita do mês × 3 como estimativa. */
+  receitaTrimestre?: string
   folha12m?: string
   folhaMensal?: string
   proLabore?: string
@@ -65,6 +71,19 @@ export interface ClientData {
   // opcionais do relatório
   numNotas?: string
   observacoes?: string
+  /** Débitos em aberto (informativos — NÃO entram no total a recolher do mês). */
+  pendencias?: Pendencia[]
+}
+
+/** Débito em aberto da empresa (atraso, cobrança, dívida ativa). Informativo. */
+export interface Pendencia {
+  id?: string
+  descricao: string
+  valor?: string
+  /** Competência do débito (MM/AAAA) — período a que se refere, não a data de vencimento. */
+  competencia?: string
+  /** Situação livre: "vencido", "em cobrança", "dívida ativa", "parcelar", etc. */
+  situacao?: string
 }
 
 export interface ExtraTax {

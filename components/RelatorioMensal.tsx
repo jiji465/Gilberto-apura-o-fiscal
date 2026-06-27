@@ -46,6 +46,11 @@ function chunkObs(text: string, maxLines = 38): string[] {
   if (cur.length) chunks.push(cur.join("\n"))
   return chunks
 }
+function chunkArr<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
+  return out
+}
 
 /* ===================== Blocos reutilizáveis ===================== */
 function Header({ title, comp, eyebrow = "Relatório Mensal" }: { title: string; comp: React.ReactNode; eyebrow?: string }) {
@@ -282,6 +287,9 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
   })())
   const totalImpostos = ap.totPagar
   const liquido = ap.revenue - totalImpostos
+  // Pendências (débitos em aberto) — informativas, NÃO entram no total/carga.
+  const pendencias = cd.pendencias || []
+  const pendTotal = pendencias.reduce((s, p) => s + parseBR(p.valor || "0"), 0)
 
   // Comparativo de regimes (informativo — total que pagaria em cada regime).
   // Memoizado: simularComparativo chama computeApuracao 1–2× extra; só recalcula quando muda cd/ap/params.
@@ -378,12 +386,15 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
 
   // numeração: Carga(1) · Agenda(2) · continuações · Indicadores · Observações
   const contCount = contChunks.length
-  // ordem: Carga(1) · [Comparativo] · Agenda · [continuações] · Indicadores · [Observações]
+  const pendChunks = chunkArr(pendencias, 16)
+  const showPend = pendChunks.length > 0
+  // ordem: Carga(1) · [Comparativo] · Agenda · [continuações] · [Pendências] · Resumo · [Observações]
   const showComp = comp.simulavel
   const pgComp = showComp ? 2 : 0
   const pgAgenda = showComp ? 3 : 2
   const pgCont = (ci: number) => pgAgenda + 1 + ci
-  const pgIndic = pgAgenda + 1 + contCount
+  const pgPend = (pi: number) => pgAgenda + 1 + contCount + pi
+  const pgIndic = pgAgenda + 1 + contCount + pendChunks.length
   const pgObs = (oi: number) => pgIndic + 1 + oi
   const totalPg = pgIndic + obsChunks.length
   const clientCols = [
@@ -511,6 +522,40 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
         </section>
       ))}
 
+      {/* ============ 2c · PENDÊNCIAS / DÉBITOS EM ABERTO (página dedicada) ============ */}
+      {showPend && pendChunks.map((chunk, pi) => (
+        <section className="page sheet" key={"pd" + pi}>
+          <Header eyebrow="Pendências" title="Débitos em Aberto"
+            comp={<>Competência <b>{compPretty}</b>{pendChunks.length > 1 ? ` · ${pi + 1}/${pendChunks.length}` : ""}</>} />
+          <div className="main"><div className="stack">
+            {pi === 0 && (
+              <div className="pend-hero">
+                <div>
+                  <div className="pend-hero-k">Total de débitos em aberto</div>
+                  <div className="pend-hero-sub">{pendencias.length} débito{pendencias.length !== 1 ? "s" : ""} · informativo — não compõem o total a recolher do mês</div>
+                </div>
+                <div className="pend-hero-v"><span className="rs">R$</span>{fmtK(pendTotal)}</div>
+              </div>
+            )}
+            <div className="sec" style={{ flex: 1 }}><Slab>Relação de débitos</Slab>
+              <div className="ptbl">
+                <div className="ptbl-h"><span>Descrição</span><span>Competência</span><span>Situação</span><span className="r">Valor</span></div>
+                {chunk.map((p, i) => (
+                  <div className="ptbl-r" key={i}>
+                    <span className="ptbl-d">{p.descricao}</span>
+                    <span>{p.competencia || "—"}</span>
+                    <span className="ptbl-s">{p.situacao || "—"}</span>
+                    <span className="r">{p.valor ? fmtBRL(parseBR(p.valor)) : "—"}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+            <Footer note={`Débitos em aberto — regularizar junto à Receita / órgão · Pág. ${pgPend(pi)} de ${totalPg}`} />
+          </div>
+        </section>
+      ))}
+
       {/* ============ 3 · INDICADORES FISCAIS ============ */}
       <section className="page sheet">
         <Header title="Resumo Executivo" comp={<>Competência <b>{compPretty}</b></>} />
@@ -524,6 +569,7 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
               {comp.simulavel && <p>No comparativo de regimes para o mesmo faturamento, o <b>{comp.melhor}</b> apresenta a menor carga total ({fmtBRL(comp.totalSimples)} no Simples Nacional × {fmtBRL(comp.totalPresumido)} no Lucro Presumido). {comp.melhor === comp.atual ? `O regime atual já é o mais econômico, com vantagem de ${fmtBRL(comp.economia)}/mês.` : `A adoção do ${comp.melhor} reduziria a carga em ${fmtBRL(comp.economia)}/mês — recomenda-se estudo de enquadramento.`}</p>}
               {isSN && <p>O faturamento acumulado em 12 meses soma <b>{fmtBRL(fatAcum12m)}</b>, consumindo {(100 - folgaSimples).toFixed(1).replace(".", ",")}% do teto de R$ 4,8 milhões do Simples Nacional e mantendo <b>{folgaSimples.toFixed(1).replace(".", ",")}% de folga</b> até o limite de desenquadramento.</p>}
               {nextDue && <p>O próximo vencimento ocorre em <b>{nextDue.day}/{nextDue.mo}</b> ({diffLabel(nextDue.diff)}). Recomenda-se a quitação das guias dentro do prazo legal para evitar multa e juros de mora.</p>}
+              {showPend && <p>A empresa possui <b>{pendencias.length} débito{pendencias.length !== 1 ? "s" : ""} em aberto</b> totalizando <b>{fmtBRL(pendTotal)}</b> — detalhados na página "Débitos em Aberto". Recomenda-se a regularização para evitar restrições (CND, dívida ativa).</p>}
               <p className="exsum-sign">{ESCRITORIO.nome} · Parecer gerado eletronicamente em {today}.</p>
             </div>
           </div>
@@ -704,6 +750,17 @@ const STYLE = `
 .gn-doc .exsum p{font:400 11.5px/1.75 'IBM Plex Sans';color:#3c4630;text-align:justify}
 .gn-doc .exsum p b{font-weight:600;color:var(--num)}
 .gn-doc .exsum .exsum-sign{margin-top:auto;font:500 10px 'Jost';letter-spacing:.04em;color:var(--gold);text-align:right;border-top:1px solid var(--bd2);padding-top:13px}
+.gn-doc .pend-hero{flex:none;background:#fbeae7;border:1.5px solid #e0b1a8;border-radius:14px;padding:16px 22px;display:flex;align-items:center;justify-content:space-between;gap:20px}
+.gn-doc .pend-hero-k{font:600 9px 'Jost';letter-spacing:.16em;text-transform:uppercase;color:#a23a2e}
+.gn-doc .pend-hero-sub{font:400 10px 'IBM Plex Sans';color:#9a685c;margin-top:5px}
+.gn-doc .pend-hero-v{font:300 17px 'Jost';color:#9a2a1e;white-space:nowrap;font-variant-numeric:tabular-nums}
+.gn-doc .pend-hero-v .rs{font-size:.58em;font-weight:500;color:#b56a5a;margin-right:2px}
+.gn-doc .ptbl{display:flex;flex-direction:column;border:1px solid var(--bd);border-radius:12px;overflow:hidden;background:var(--card)}
+.gn-doc .ptbl-h{display:grid;grid-template-columns:1fr 78px 108px 92px;gap:10px;padding:9px 15px;background:#f7f2e6;font:600 8px 'Jost';letter-spacing:.1em;text-transform:uppercase;color:var(--gold)}
+.gn-doc .ptbl-r{display:grid;grid-template-columns:1fr 78px 108px 92px;gap:10px;padding:9px 15px;border-top:1px solid var(--bd2);font:400 10.5px 'IBM Plex Sans';color:#3c4630;align-items:center}
+.gn-doc .ptbl .r{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+.gn-doc .ptbl-d{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gn-doc .ptbl-s{color:#a23a2e;text-transform:capitalize;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .gn-doc .foot{margin-top:auto;display:flex;justify-content:space-between;align-items:center;padding-top:5mm;border-top:1px solid var(--bd)}
 .gn-doc .foot-l{display:flex;align-items:center;gap:9px}
 .gn-doc .fnm{font:600 9.5px 'IBM Plex Sans';color:#334023}

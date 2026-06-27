@@ -123,9 +123,12 @@ export const calcSN = (rbt12: number, anexo: string) => {
   return { rate: Math.max(eff, 0), nominal: f[1], deducao: f[2], faixa: fi + 1 }
 }
 export const calcFatorR = (folha12: number, rbt12: number): number => (!rbt12 || rbt12 <= 0 ? 0 : (folha12 / rbt12) * 100)
-export const anexoEfetivo = (anexo: string, fatorR: number): string => {
-  if (anexo === "Anexo V" && fatorR >= 28) return "Anexo III"
-  if (anexo === "Anexo III" && fatorR > 0 && fatorR < 28) return "Anexo V"
+export const anexoEfetivo = (anexo: string, fatorR: number, sujeitoFatorR = false): string => {
+  // Atividade sujeita ao Fator R (serviços intelectuais, §5º-I da LC 123): o anexo é
+  // DETERMINADO pelo teste — Anexo III se Fator R ≥ 28%, Anexo V se < 28%. O operador não
+  // escolhe III ou V; o sistema decide pela folha de cada mês (não existe "Anexo V fixo").
+  if (sujeitoFatorR) return fatorR >= 28 ? "Anexo III" : "Anexo V"
+  // Não sujeita ao Fator R: usa o anexo fixo escolhido (I, II, III §5º-B, ou IV).
   return anexo
 }
 export const repartirDAS = (das: number, anexo: string, faixa: number): RepartItem[] => {
@@ -184,7 +187,14 @@ export const dueDate = (compMonth?: string, compYear?: string, tax = ""): string
   if (nm > 12) { nm = 1; ny++ }
   const pad = (n: number) => String(n).padStart(2, "0")
   const fmt = (dt: Date) => `${pad(dt.getDate())}/${pad(dt.getMonth() + 1)}/${dt.getFullYear()}`
-  if (["IRPJ", "CSLL", "Adicional IRPJ"].includes(tax)) return `${pad(lastBizDay(nm, ny))}/${pad(nm)}/${ny}`
+  if (["IRPJ", "CSLL", "Adicional IRPJ"].includes(tax)) {
+    // Lucro Presumido: apuração TRIMESTRAL. A quota única (ou 1ª de 3) vence no último
+    // dia útil do mês seguinte ao encerramento do trimestre (mês 3, 6, 9 ou 12).
+    const qe = Math.ceil(m / 3) * 3
+    let dm = qe + 1, dy = y
+    if (dm > 12) { dm = 1; dy++ }
+    return `${pad(lastBizDay(dm, dy))}/${pad(dm)}/${dy}`
+  }
   const map: Record<string, number> = {
     PIS: 25, COFINS: 25, ISS: 10, "ISS (próprio)": 10, "INSS (Pró-labore)": 20,
     "CPP (Patronal)": 20, RAT: 20, Terceiros: 20, FGTS: 20, DAS: 20, "DAS-MEI": 20, ICMS: 20, IRRF: 20,
@@ -209,6 +219,8 @@ export function computeApuracao(cd: ClientData, params: ParametrosFiscais = PARA
   const folhaMensal = parseBR(cd.folhaMensal)
   const ret = cd.ret || {}
   const taxes: TaxRow[] = []
+  // Anexo III só é sujeito ao Fator R quando o operador marca; Anexo V é sempre sujeito.
+  const sujeitoFatorR = !!cd.sujeitoFatorR
 
   // ---------- SIMPLES NACIONAL ----------
   let sn: SnInfo | null = null
@@ -222,7 +234,7 @@ export function computeApuracao(cd: ClientData, params: ParametrosFiscais = PARA
     const folha12 = parseBR(cd.folha12m)
     const fatorR = calcFatorR(folha12, rbt12)
     const anexoBase = cd.anexo || "Anexo III"
-    const anexoEf = anexoEfetivo(anexoBase, fatorR)
+    const anexoEf = anexoEfetivo(anexoBase, fatorR, sujeitoFatorR)
     const r = calcSN(rbt12, anexoEf)
     const dasCalc = (revenue * r.rate) / 100
     // Quando importado do PGDAS-D, o DAS oficial já considera ICMS-ST e PIS/COFINS
@@ -276,8 +288,14 @@ export function computeApuracao(cd: ClientData, params: ParametrosFiscais = PARA
     const equip = !!cd.equipHospitalar && atividade === "Serviços"
     const pIrpj = equip ? 0.08 : (atividade === "Serviços" ? params.presIrpjServicos : params.presIrpjComercio) / 100
     const pCsll = equip ? 0.12 : (atividade === "Serviços" ? params.presCsllServicos : params.presCsllComercio) / 100
-    const baseIrpj = baseLP(revenue, pIrpj, params)
-    const baseCsll = baseLP(revenue, pCsll, params)
+    // IRPJ/CSLL são apurados TRIMESTRALMENTE. Trabalhamos com a receita MENSAL-EQUIVALENTE
+    // (receita do trimestre ÷ 3): quando o operador informa a receita do trimestre a provisão
+    // fica exata mesmo com faturamento irregular; vazio ⇒ usa a do mês (retrocompatível).
+    // O limite do adicional (R$ 20.000/mês) equivale aos R$ 60.000/trimestre da lei.
+    const recTrim = parseBR(cd.receitaTrimestre)
+    const mesEquiv = recTrim > 0 ? recTrim / 3 : revenue
+    const baseIrpj = baseLP(mesEquiv, pIrpj, params)
+    const baseCsll = baseLP(mesEquiv, pCsll, params)
     const irpj = baseIrpj * (params.irpjRate / 100)
     const adic = Math.max(0, baseIrpj - params.irpjAdicLimiteMensal) * (params.irpjAdicRate / 100)
     const csll = baseCsll * (params.csllRate / 100)
@@ -295,9 +313,10 @@ export function computeApuracao(cd: ClientData, params: ParametrosFiscais = PARA
     pushLP("COFINS", revenue, params.cofinsCumulativo, revenue * (params.cofinsCumulativo / 100), `Regime cumulativo (${params.cofinsCumulativo.toFixed(0)}%)`, "PIS/COFINS")
     if (atividade === "Serviços" && issRate > 0)
       pushLP("ISS", revenue, issRate, (revenue * issRate) / 100, "Imposto municipal sobre serviços", "ISS", "ISS")
-    pushLP("IRPJ", baseIrpj, params.irpjRate, irpj, `Presunção ${(pIrpj * 100).toFixed(0)}%${equip ? " (equiparação hospitalar)" : ""} • venc. trimestral`, "IRPJ/CSLL", "IRPJ")
-    if (adic > 0) pushLP("Adicional IRPJ", Math.max(0, baseIrpj - params.irpjAdicLimiteMensal), params.irpjAdicRate, adic, `Sobre base que excede R$ ${fmtNum(params.irpjAdicLimiteMensal)}/mês`, "IRPJ/CSLL", "IRPJ")
-    pushLP("CSLL", baseCsll, params.csllRate, csll, `Presunção ${(pCsll * 100).toFixed(0)}%${equip ? " (equiparação hospitalar)" : ""} • venc. trimestral`, "IRPJ/CSLL", "CSLL")
+    const provNota = recTrim > 0 ? "provisão mensal (1/3 do trimestre)" : "provisão mensal (1/3) — informe a receita do trimestre p/ exatidão"
+    pushLP("IRPJ", baseIrpj, params.irpjRate, irpj, `Presunção ${(pIrpj * 100).toFixed(0)}%${equip ? " (equiparação hospitalar)" : ""} • apuração trimestral · ${provNota}`, "IRPJ/CSLL", "IRPJ")
+    if (adic > 0) pushLP("Adicional IRPJ", Math.max(0, baseIrpj - params.irpjAdicLimiteMensal), params.irpjAdicRate, adic, `10% sobre o que excede R$ 60.000/trimestre (base mensal-equiv. acima de R$ ${fmtNum(params.irpjAdicLimiteMensal)})`, "IRPJ/CSLL", "IRPJ")
+    pushLP("CSLL", baseCsll, params.csllRate, csll, `Presunção ${(pCsll * 100).toFixed(0)}%${equip ? " (equiparação hospitalar)" : ""} • apuração trimestral · ${provNota}`, "IRPJ/CSLL", "CSLL")
 
   }
 
@@ -405,7 +424,8 @@ export function computeApuracao(cd: ClientData, params: ParametrosFiscais = PARA
 
   // ---------- ECONOMIAS ----------
   const economias: Economia[] = []
-  if (sn && (sn.anexoBase === "Anexo III" || sn.anexoBase === "Anexo V") && sn.rbt12 > 0 && revenue > 0) {
+  // Economia do Fator R só existe para atividade sujeita ao Fator R (alterna III ↔ V).
+  if (sn && sujeitoFatorR && sn.rbt12 > 0 && revenue > 0) {
     const rIII = calcSN(sn.rbt12, "Anexo III").rate
     const rV = calcSN(sn.rbt12, "Anexo V").rate
     const dasIII = (revenue * rIII) / 100
