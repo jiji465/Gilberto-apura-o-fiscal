@@ -5,12 +5,13 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        navy: { DEFAULT: "#0B2A4A", 2: "#16456f" },
-        gold: { DEFAULT: "#E8A53D", 2: "#cf8a1e", deep: "#a86c12" },
+        // Mantém os nomes; valores alinhados ao relatório (verde-oliva + dourado).
+        navy: { DEFAULT: "#3f4e2c", 2: "#4e603a" },
+        gold: { DEFAULT: "#b0892e", 2: "#9c7b2e", deep: "#7a5f1f" },
       },
       fontFamily: {
-        sans: ["Archivo", "system-ui", "sans-serif"],
-        serif: ["Spectral", "Georgia", "serif"],
+        sans: ["IBM Plex Sans", "system-ui", "sans-serif"],
+        serif: ["Jost", "system-ui", "sans-serif"],
       },
     },
   },
