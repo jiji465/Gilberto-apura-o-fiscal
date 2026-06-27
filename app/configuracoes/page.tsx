@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Settings, Save, RotateCcw } from "lucide-react"
 import { PARAMETROS_PADRAO, type ParametrosFiscais } from "@/lib/config"
 import { getParametros, saveParametros } from "@/lib/storage"
@@ -8,8 +8,14 @@ import { toastSuccess, toastInfo } from "@/lib/toast"
 
 export default function ConfiguracoesPage() {
   const [p, setP] = useState<ParametrosFiscais>(PARAMETROS_PADRAO)
+  const hydrated = useRef(false)
 
   useEffect(() => { setP(getParametros()) }, [])
+  // Autossalva a cada mudança — não perde os parâmetros ao navegar (pula o 1º render).
+  useEffect(() => {
+    if (!hydrated.current) { hydrated.current = true; return }
+    saveParametros(p)
+  }, [p])
 
   const set = (k: keyof ParametrosFiscais, v: number | boolean) => setP((prev) => ({ ...prev, [k]: v }))
   const num = (v: string) => (v === "" ? 0 : parseFloat(v.replace(",", ".")) || 0)
