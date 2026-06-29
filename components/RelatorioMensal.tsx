@@ -274,19 +274,24 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
   const anexoFaixa = isSN ? `${ap.sn!.anexoEf} · ${ap.sn!.faixa}ª faixa` : ap.atividade
 
   const taxesPos = ap.taxes.filter((t) => parseBR(t.value) > 0)
-  // Composição: para o Simples, abre o DAS na sua repartição (IRPJ, CSLL, COFINS,
-  // PIS, CPP, ICMS, ISS) + guias por fora (folha). Para os demais, agrupa por tributo.
+  // Composição: guias realmente apuradas no mês (uma fatia por guia), sem abrir o
+  // DAS na repartição teórica e sem guias manuais. Soma bate com o KPI "Impostos".
   const compSegs: Seg[] = capSegs((() => {
-    if (ap.sn && ap.sn.repart.length) {
-      const segs: Seg[] = ap.sn.repart.map((r) => ({ label: r.tax, value: r.value })).filter((s) => s.value > 0)
-      ap.taxes.filter((t) => t.group !== "DAS" && parseBR(t.value) > 0).forEach((t) => segs.push({ label: t.tax, value: parseBR(t.value) }))
-      return segs.sort((a, b) => b.value - a.value)
-    }
+    // MEI tem uma única guia (DAS-MEI); manter a abertura informativa não duplica.
     if (ap.mei) return ap.mei.repart.map((r) => ({ label: r.tax, value: r.value })).filter((s) => s.value > 0)
-    return taxesPos.map((t) => ({ label: t.tax, value: parseBR(t.value) })).sort((a, b) => b.value - a.value)
+    // Simples, Lucro Presumido e Lucro Real: uma fatia por guia apurada no mês,
+    // sem guias manuais (parcelamentos, débitos antigos, taxas).
+    return ap.taxes
+      .filter((t) => !t.manual && parseBR(t.value) > 0)
+      .map((t) => ({ label: t.tax, value: parseBR(t.value) }))
+      .sort((a, b) => b.value - a.value)
   })())
-  const totalImpostos = ap.totPagar
-  const liquido = ap.revenue - totalImpostos
+  // impostosMes: tributos próprios da competência (carga, rosca, KPI "Impostos", parecer).
+  // totalRecolher: tudo que vence no mês, incl. parcelamentos (agenda / "Total a recolher").
+  const impostosMes = ap.totPagarMes
+  const totalRecolher = ap.totPagar
+  const taxesMes = ap.taxes.filter((t) => !t.manual && parseBR(t.value) > 0) // guias do mês (contagem/parecer)
+  const liquido = ap.revenue - impostosMes
   // Pendências (débitos em aberto) — informativas, NÃO entram no total/carga.
   const pendencias = cd.pendencias || []
   const pendTotal = pendencias.reduce((s, p) => s + parseBR(p.valor || "0"), 0)
@@ -300,7 +305,11 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
   // ECONOMIA REAL gerada pela empresa: Fator R (Anexo III) + segregação
   // (PIS/COFINS monofásico / ICMS-ST que reduz o DAS) + equiparação hospitalar.
   const ecoFatorR = ap.economias.find((e) => e.tipo === "fatorr" && e.atingiu && e.valor > 0)?.valor || 0
-  const ecoSeg = ap.sn ? Math.max(0, ap.sn.dasNominal - ap.sn.das) : 0
+  // Segregação (PIS/COFINS monofásico + ICMS-ST) só existe em comércio (Anexo I) e
+  // indústria (Anexo II). Em serviços (III/IV/V) não há, então a economia é 0.
+  const anexoEf = ap.sn?.anexoEf
+  const segregavel = anexoEf === "Anexo I" || anexoEf === "Anexo II"
+  const ecoSeg = ap.sn && segregavel ? Math.max(0, ap.sn.dasNominal - ap.sn.das) : 0
   const ecoHosp = ap.economias.find((e) => e.tipo === "hospitalar" && e.valor > 0)?.valor || 0
   const economiaMes = ecoFatorR + ecoSeg + ecoHosp
   const ecoFontes: string[] = []
@@ -309,7 +318,7 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
   if (ecoHosp > 0) ecoFontes.push("equiparação hospitalar")
   const ecoLabel = ecoFontes.join(" + ") || "economia tributária"
   const showEco = economiaMes > 0.5
-  const ecoPct = totalImpostos + economiaMes > 0 ? (economiaMes / (totalImpostos + economiaMes)) * 100 : 0
+  const ecoPct = impostosMes + economiaMes > 0 ? (economiaMes / (impostosMes + economiaMes)) * 100 : 0
 
   const curKey = curYear && curMonth ? curYear + "-" + String(curMonth).padStart(2, "0") : ""
   const evo = (evolution || []).slice().sort((a, b) => a.key.localeCompare(b.key))
@@ -371,7 +380,7 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
       value: g.total, tag: diffLabel(g.diff), hl: g.diff < 0 || g.diff <= 5,
     }
   })
-  const totalRow: VItem = { kind: "tot", name: "Total a recolher", sub: `${dueGroups.length} guia${dueGroups.length !== 1 ? "s" : ""} com pagamento · ${MONTHS[calM - 1].toLowerCase()}`, value: totalImpostos }
+  const totalRow: VItem = { kind: "tot", name: "Total a recolher", sub: `${dueGroups.length} guia${dueGroups.length !== 1 ? "s" : ""} com pagamento · ${MONTHS[calM - 1].toLowerCase()}`, value: totalRecolher }
   const allV: VItem[] = [...payRows, totalRow]
 
   // paginação: 1ª página da Agenda (ao lado do calendário) leva FIRST itens; o resto vai p/ continuações
@@ -397,6 +406,36 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
   const pgIndic = pgAgenda + 1 + contCount + pendChunks.length
   const pgObs = (oi: number) => pgIndic + 1 + oi
   const totalPg = pgIndic + obsChunks.length
+
+  // ----- Dados derivados para o parecer da competência -----
+  const pct1 = (n: number) => n.toFixed(1).replace(".", ",") + "%"
+  const pct2 = (n: number) => n.toFixed(2).replace(".", ",") + "%"
+  // Fator R (só Simples sujeito ao Fator R)
+  const sujeitoFatorR = !!cd.sujeitoFatorR
+  const fatorR = ap.sn?.fatorR ?? 0
+  const rbt12 = ap.sn?.rbt12 ?? 0
+  const folha12 = ap.sn?.folha12 ?? 0
+  const fatorRAtingiu = sujeitoFatorR && fatorR >= 28
+  // Folha somada ao pró-labore que ainda falta p/ alcançar 28% do RBT12 (Anexo III).
+  const folhaFaltante = Math.max(0, 0.28 * rbt12 - folha12)
+  // Pró-labore e suas guias do mês
+  const proLaboreVal = parseBR(cd.proLabore)
+  const temProLabore = proLaboreVal > 0
+  const inssPro = ap.taxes.find((t) => t.tax === "INSS (Pró-labore)")
+  const irrfPro = ap.taxes.find((t) => t.tax === "IRRF (Pró-labore)")
+  // Guias vencidas (na agenda do mês)
+  const vencidas = dueGroups.filter((g) => g.diff < 0)
+  const vencidasTot = vencidas.reduce((s, g) => s + g.total, 0)
+  const vencidasQtd = vencidas.reduce((s, g) => s + g.items.length, 0)
+  // Parcelamentos: desembolso de competências anteriores (fora da carga do mês)
+  const parcelas = ap.taxes.filter((t) => t.group === "Parcelamento")
+  const parcelasTot = parcelas.reduce((s, t) => s + parseBR(t.value), 0)
+  const parcelasNum = parcelas.length
+  // Retenções na fonte
+  const temRetencao = ap.totRetido > 0.005
+  // Três maiores itens da composição (concentração da carga)
+  const topComp = [...compSegs].sort((a, b) => b.value - a.value).slice(0, 3)
+
   const clientCols = [
     { k: "Cliente", v: cd.clientName || "—" },
     { k: "CNPJ", v: cd.cnpj || "—" },
@@ -424,14 +463,14 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
               </div>
               <div className="panel f1 fx col">
                 <div className="slab" style={{ marginBottom: 4 }}><span style={{ color: "var(--muted)", letterSpacing: ".16em" }}>Composição dos tributos</span></div>
-                {compSegs.length ? <Donut segs={compSegs} total={totalImpostos} /> : <div className="g-note">Sem tributos apurados.</div>}
+                {compSegs.length ? <Donut segs={compSegs} total={impostosMes} /> : <div className="g-note">Sem tributos apurados.</div>}
               </div>
             </div>
           </div>
           <div className="sec"><Slab>Indicadores do mês</Slab>
             <div className="kpis">
               <Kpi k="Faturamento" v={<RS v={ap.revenue} />} s={fatTrend != null ? <><span className="up">▲ {Math.abs(fatTrend).toFixed(1).replace(".", ",")}%</span> vs. mês ant.</> : "bruto do mês"} />
-              <Kpi k="Impostos" v={<RS v={totalImpostos} />} s={`${taxesPos.length} guia${taxesPos.length !== 1 ? "s" : ""} no mês`} />
+              <Kpi k="Impostos" v={<RS v={impostosMes} />} s={`${taxesMes.length} guia${taxesMes.length !== 1 ? "s" : ""} no mês`} />
               {showEco
                 ? <Kpi hl k="Economia" v={<RS v={economiaMes} />} s={ecoLabel} />
                 : <Kpi k="Carga efetiva" v={fmtPct(ap.aliqEfetiva)} s="s/ faturamento" />}
@@ -472,6 +511,7 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
                 <CmpRow name="Simples Nacional" cls="f-green" w={(comp.totalSimples / maxReg) * 100} val={fmtBRL(comp.totalSimples)} />
                 <CmpRow name="Lucro Presumido" cls="f-gold" w={(comp.totalPresumido / maxReg) * 100} val={fmtBRL(comp.totalPresumido)} />
               </div>
+              {comp.estimado && <div className="cmp-est">Comparativo <b>aproximado</b>: em comércio/indústria o ICMS depende dos créditos de entrada e da substituição tributária. {isSN ? <>O ICMS do Lucro Presumido foi <b>estimado em {fmtPct(parseBR(cd.icmsCompPct))}</b> sobre as vendas.</> : <>Usado o ICMS informado na apuração.</>}</div>}
             </div>
             <div className="sec" style={{ flex: 1 }}><Slab>Detalhamento tributo a tributo</Slab>
               <CompTable comp={comp} />
@@ -489,7 +529,7 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
           <ClientBar cols={[clientCols[0], clientCols[1], clientCols[2], { k: "Competência", v: compPretty }]} />
           <div className="sec"><Slab>Resumo das obrigações</Slab>
             <div className="kpis">
-              <Kpi k="Total a recolher" v={<RS v={totalImpostos} />} s={`em ${MONTHS[calM - 1].toLowerCase()}`} />
+              <Kpi k="Total a recolher" v={<RS v={totalRecolher} />} s={`em ${MONTHS[calM - 1].toLowerCase()}`} />
               <Kpi k="Guias do mês" v={String(dueGroups.length)} s="no mês" />
               <Kpi hl k="Próximo vencimento" v={nextDue ? <>{nextDue.day}/{nextDue.mo}</> : "—"} s={nextDue ? diffLabel(nextDue.diff) : "sem guias"} />
               {showEco
@@ -563,14 +603,35 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
           <ClientBar cols={[clientCols[0], clientCols[1], clientCols[2], { k: "Carga efetiva", v: `${fmtPct(ap.aliqEfetiva)} s/ faturamento` }]} />
           <div className="sec" style={{ flex: 1 }}><Slab>Parecer da competência</Slab>
             <div className="exsum">
-              <p>Na competência <b>{compPretty}</b>, a empresa <b>{cd.clientName || "—"}</b> ({ap.regime}{isSN ? ` · ${anexoFaixa}` : ""}) apurou faturamento bruto de <b>{fmtBRL(ap.revenue)}</b>, sobre o qual incide carga tributária efetiva de <b>{fmtPct(ap.aliqEfetiva)}</b> — equivalente a <b>{fmtBRL(totalImpostos)}</b> em tributos, distribuídos em {taxesPos.length} guia{taxesPos.length !== 1 ? "s" : ""}. O valor líquido após impostos é de <b>{fmtBRL(liquido)}</b> ({(ap.revenue > 0 ? (liquido / ap.revenue) * 100 : 0).toFixed(1).replace(".", ",")}% do faturamento).</p>
-              {compSegs.length > 0 && <p>A carga do mês concentra-se em {[...compSegs].sort((a, b) => b.value - a.value).slice(0, 3).map((s) => `${s.label} (${(totalImpostos > 0 ? (s.value / totalImpostos) * 100 : 0).toFixed(1).replace(".", ",")}%)`).join(", ")}, que respondem pela maior parcela do recolhimento da competência.</p>}
-              {showEco && <p>A apuração gerou <b>economia tributária de {fmtBRL(economiaMes)}</b>{temAcumulado ? ` (${fmtBRL(economiaAno)} acumulados no ano)` : ""}, decorrente de {ecoLabel} — benefício já refletido no valor recolhido na competência.</p>}
-              {comp.simulavel && <p>No comparativo de regimes para o mesmo faturamento, o <b>{comp.melhor}</b> apresenta a menor carga total ({fmtBRL(comp.totalSimples)} no Simples Nacional × {fmtBRL(comp.totalPresumido)} no Lucro Presumido). {comp.melhor === comp.atual ? `O regime atual já é o mais econômico, com vantagem de ${fmtBRL(comp.economia)}/mês.` : `A adoção do ${comp.melhor} reduziria a carga em ${fmtBRL(comp.economia)}/mês — recomenda-se estudo de enquadramento.`}</p>}
-              {isSN && <p>O faturamento acumulado em 12 meses soma <b>{fmtBRL(fatAcum12m)}</b>, consumindo {(100 - folgaSimples).toFixed(1).replace(".", ",")}% do teto de R$ 4,8 milhões do Simples Nacional e mantendo <b>{folgaSimples.toFixed(1).replace(".", ",")}% de folga</b> até o limite de desenquadramento.</p>}
-              {nextDue && <p>O próximo vencimento ocorre em <b>{nextDue.day}/{nextDue.mo}</b> ({diffLabel(nextDue.diff)}). Recomenda-se a quitação das guias dentro do prazo legal para evitar multa e juros de mora.</p>}
-              {showPend && <p>A empresa possui <b>{pendencias.length} débito{pendencias.length !== 1 ? "s" : ""} em aberto</b> totalizando <b>{fmtBRL(pendTotal)}</b> — detalhados na página "Débitos em Aberto". Recomenda-se a regularização para evitar restrições (CND, dívida ativa).</p>}
-              <p className="exsum-sign">{ESCRITORIO.nome} · Parecer gerado eletronicamente em {today}.</p>
+              {/* 1 · Abertura */}
+              <p>Na competência <b>{compPretty}</b>, a empresa <b>{cd.clientName || "—"}</b> ({ap.regime}{isSN ? `, ${anexoFaixa}` : ""}) apurou faturamento bruto de <b>{fmtBRL(ap.revenue)}</b>, sobre o qual incide carga tributária efetiva de <b>{fmtPct(ap.aliqEfetiva)}</b> ({fmtBRL(impostosMes)} em tributos do mês, distribuídos em {taxesMes.length} guia{taxesMes.length !== 1 ? "s" : ""}). O valor líquido após impostos é de <b>{fmtBRL(liquido)}</b> ({pct1(ap.revenue > 0 ? (liquido / ap.revenue) * 100 : 0)} do faturamento).</p>
+              {/* 2 · Concentração da carga */}
+              {topComp.length > 0 && <p>A carga do mês concentra-se em {topComp.map((s) => `${s.label} (${pct1(impostosMes > 0 ? (s.value / impostosMes) * 100 : 0)})`).join(", ")}, que respondem pela maior parcela do recolhimento da competência.</p>}
+              {/* 3 · Economia */}
+              {showEco && <p>A apuração gerou <b>economia tributária de {fmtBRL(economiaMes)}</b>{temAcumulado ? ` (${fmtBRL(economiaAno)} acumulados no ano)` : ""}, decorrente de {ecoLabel}, benefício já refletido no valor recolhido na competência.</p>}
+              {/* 4 · Fator R */}
+              {sujeitoFatorR && fatorRAtingiu && <p>Com Fator R de <b>{pct2(fatorR)}</b> (≥ 28%), a empresa é enquadrada no <b>Anexo III</b>, de alíquota menor que o Anexo V{ecoFatorR > 0 ? <>, o que representa economia de <b>{fmtBRL(ecoFatorR)}</b> no DAS frente ao Anexo V</> : null}.</p>}
+              {sujeitoFatorR && !fatorRAtingiu && <p>O Fator R de <b>{pct2(fatorR)}</b> (abaixo de 28%) mantém a empresa no <b>Anexo V</b>, de alíquota maior. {folhaFaltante > 0 ? <>Para alcançar os 28% do RBT12 e migrar ao Anexo III seriam necessários cerca de <b>{fmtBRL(folhaFaltante)}</b> a mais de folha somada ao pró-labore nos últimos 12 meses, o que reduziria o DAS.</> : <>O aumento da folha somada ao pró-labore aproximaria a empresa do Anexo III, reduzindo o DAS.</>}</p>}
+              {/* 5 · Teto do Simples */}
+              {isSN && <p>O faturamento acumulado em 12 meses soma <b>{fmtBRL(fatAcum12m)}</b>, consumindo {pct1(100 - folgaSimples)} do teto de R$ 4,8 milhões do Simples Nacional, com <b>{pct1(folgaSimples)} de folga</b>. {folgaSimples < 20 ? "A folga está estreita: há aproximação do limite de desenquadramento, recomendando-se acompanhamento mensal do faturamento." : folgaSimples <= 40 ? "A folga pede atenção ao ritmo de faturamento para não se aproximar do limite." : "A situação é confortável frente ao limite de desenquadramento."}</p>}
+              {/* 6 · Vencimentos */}
+              {vencidas.length > 0
+                ? <p>Há <b>{vencidasQtd} guia{vencidasQtd !== 1 ? "s" : ""} vencida{vencidasQtd !== 1 ? "s" : ""}</b> totalizando <b>{fmtBRL(vencidasTot)}</b>. Recomenda-se a regularização imediata (sujeita a multa e juros de mora) para evitar restrições.</p>
+                : nextDue ? <p>O próximo vencimento ocorre em <b>{nextDue.day}/{nextDue.mo}</b> ({diffLabel(nextDue.diff)}). Recomenda-se a quitação das guias dentro do prazo legal para evitar multa e juros de mora.</p> : null}
+              {/* 7 · Pró-labore */}
+              {temProLabore
+                ? <p>Sobre o pró-labore de <b>{fmtBRL(proLaboreVal)}</b> incide o <b>INSS{inssPro ? ` de ${fmtBRL(parseBR(inssPro.value))}` : ""}</b>{irrfPro ? <>, além do <b>IRRF de {fmtBRL(parseBR(irrfPro.value))}</b></> : null}, recolhido na competência.</p>
+                : (sujeitoFatorR ? <p>A empresa é sujeita ao Fator R e não possui pró-labore: a adoção de pró-labore eleva a folha considerada no cálculo, sendo um caminho para atingir os 28% e migrar ao Anexo III.</p> : null)}
+              {/* 8 · Retenções */}
+              {temRetencao && <p>Parte dos tributos foi <b>retida na fonte</b> ({fmtBRL(ap.totRetido)}), antecipando o recolhimento e reduzindo o desembolso efetivo da competência.</p>}
+              {/* 9 · Parcelamentos */}
+              {parcelasNum > 0 && <p>À parte da carga do mês, há <b>{parcelasNum} parcelamento{parcelasNum !== 1 ? "s" : ""}</b> totalizando <b>{fmtBRL(parcelasTot)}</b>, referentes a desembolsos de competências anteriores. Esses valores integram o total a recolher, mas não compõem a carga tributária efetiva da competência.</p>}
+              {/* 10 · Pendências */}
+              {showPend && <p>A empresa possui <b>{pendencias.length} débito{pendencias.length !== 1 ? "s" : ""} em aberto</b> totalizando <b>{fmtBRL(pendTotal)}</b> (detalhados na página "Débitos em Aberto"). Recomenda-se a regularização para evitar restrições (CND, dívida ativa).</p>}
+              {/* 11 · Comparativo de regimes */}
+              {comp.simulavel && <p>No comparativo de regimes para o mesmo faturamento, o <b>{comp.melhor}</b> apresenta a menor carga total ({fmtBRL(comp.totalSimples)} no Simples Nacional × {fmtBRL(comp.totalPresumido)} no Lucro Presumido). {comp.melhor === comp.atual ? `O regime atual já é o mais econômico, com vantagem de ${fmtBRL(comp.economia)}/mês.` : `A adoção do ${comp.melhor} reduziria a carga em ${fmtBRL(comp.economia)}/mês (recomenda-se estudo de enquadramento).`}</p>}
+              {/* 12 · Assinatura */}
+              <p className="exsum-sign">{ESCRITORIO.nome}</p>
             </div>
           </div>
         </div>
@@ -671,6 +732,8 @@ const STYLE = `
 .gn-doc .gp-note{flex:1;font:400 11px/1.6 'IBM Plex Sans';color:#56604a}
 .gn-doc .gp-note b{color:var(--green-dk);font-weight:600}
 .gn-doc .cmp{flex:1;display:flex;flex-direction:column;gap:11px}
+.gn-doc .cmp-est{margin-top:11px;background:#fbf6ea;border:1px solid #e6d6a8;border-radius:9px;padding:9px 13px;font:400 9.5px/1.5 'IBM Plex Sans';color:#7a5e1f}
+.gn-doc .cmp-est b{font-weight:600;color:#6a4e12}
 .gn-doc .cmp-row{display:grid;grid-template-columns:118px 1fr 82px;align-items:center;gap:13px}
 .gn-doc .cmp-name{font:400 10.5px 'IBM Plex Sans';color:#334023}
 .gn-doc .cmp-track{height:13px;background:#ece7d6;border-radius:7px;overflow:hidden}

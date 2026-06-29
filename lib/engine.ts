@@ -417,10 +417,18 @@ export function computeApuracao(cd: ClientData, params: ParametrosFiscais = PARA
   })
 
   // ---------- TOTAIS ----------
+  // Total a recolher (caixa do mês): todas as guias, inclusive manuais
+  // (parcelamentos, débitos de meses anteriores e taxas avulsas).
   const totApurado = taxes.reduce((s, t) => s + parseBR(t.apurado), 0)
   const totRetido = taxes.reduce((s, t) => s + parseBR(t.retido), 0)
   const totPagar = taxes.reduce((s, t) => s + parseBR(t.value), 0)
-  const aliqEfetiva = revenue > 0 ? (totApurado / revenue) * 100 : 0
+  // Impostos próprios da competência: exclui guias manuais. Folha e pró-labore
+  // (INSS/IRRF) são guias normais do motor, então continuam contando aqui.
+  const ehTributoMes = (t: TaxRow) => !t.manual
+  const totApuradoMes = taxes.filter(ehTributoMes).reduce((s, t) => s + parseBR(t.apurado), 0)
+  const totPagarMes = taxes.filter(ehTributoMes).reduce((s, t) => s + parseBR(t.value), 0)
+  // Alíquota efetiva passa a usar só os impostos da competência.
+  const aliqEfetiva = revenue > 0 ? (totApuradoMes / revenue) * 100 : 0
 
   // ---------- ECONOMIAS ----------
   const economias: Economia[] = []
@@ -463,7 +471,7 @@ export function computeApuracao(cd: ClientData, params: ParametrosFiscais = PARA
   const economiaTributaria = economias.filter((e) => e.tipo !== "retencao" && e.valor > 0).reduce((s, e) => s + e.valor, 0)
   const economiaCaixa = economias.filter((e) => e.tipo === "retencao").reduce((s, e) => s + e.valor, 0)
 
-  return { regime, atividade, revenue, taxes, sn, lp, mei, ret, totApurado, totRetido, totPagar, aliqEfetiva, economias, economiaTributaria, economiaCaixa }
+  return { regime, atividade, revenue, taxes, sn, lp, mei, ret, totApurado, totRetido, totPagar, totApuradoMes, totPagarMes, aliqEfetiva, economias, economiaTributaria, economiaCaixa }
 }
 
 /* ===== Simulação Lucro Presumido (p/ a comparação de economia do relatório) ===== */
@@ -519,6 +527,8 @@ export interface Comparativo {
   melhor: "Simples Nacional" | "Lucro Presumido"
   atual: string
   simulavel: boolean
+  /** true p/ comércio/indústria: o ICMS do lado Presumido é estimado (% efetivo). */
+  estimado: boolean
 }
 
 const COMP_ORDEM = ["DAS", "PIS", "COFINS", "IRPJ", "Adicional IRPJ", "CSLL", "ISS", "ICMS", "CPP (Patronal)", "RAT", "Terceiros", "FGTS", "INSS (Pró-labore)"]
@@ -535,8 +545,12 @@ export function simularComparativo(cd: ClientData, ap: Apuracao, params: Paramet
   const ativDoAnexo = (anexo?: string): ClientData["atividade"] =>
     anexo === "Anexo I" ? "Comércio" : anexo === "Anexo II" ? "Indústria" : "Serviços"
   const ativComparativo = isSN ? ativDoAnexo(cd.anexo) : cd.atividade
+  const ehServico = ativComparativo === "Serviços"
+  // ICMS do lado Lucro Presumido (comércio/indústria): usa o ICMS real digitado se a
+  // empresa já é LP; senão ESTIMA por % efetivo sobre as vendas (líquido de créditos).
+  const icmsLP = ehServico ? 0 : (isLP && parseBR(cd.icmsRecolher) > 0 ? parseBR(cd.icmsRecolher) : ap.revenue * (parseBR(cd.icmsCompPct) / 100))
   const apS = isSN ? ap : computeApuracao({ ...base, regime: "Simples Nacional", anexo: cd.anexo || "Anexo III" }, params)
-  const apP = isLP ? ap : computeApuracao({ ...base, regime: "Lucro Presumido", atividade: ativComparativo }, params)
+  const apP = isLP ? ap : computeApuracao({ ...base, regime: "Lucro Presumido", atividade: ativComparativo, icmsRecolher: fmtNum(icmsLP) }, params)
 
   const somaPorTributo = (a: Apuracao) => {
     const m: Record<string, number> = {}
@@ -550,14 +564,15 @@ export function simularComparativo(cd: ClientData, ap: Apuracao, params: Paramet
   const linhas: CompLinha[] = nomes.map((n) => ({ tributo: n, simples: sMap[n] || 0, presumido: pMap[n] || 0 }))
   const totalSimples = linhas.reduce((s, l) => s + l.simples, 0)
   const totalPresumido = linhas.reduce((s, l) => s + l.presumido, 0)
-  // Comparativo Simples × Lucro Presumido só faz sentido para SERVIÇOS
-  // (no comércio/indústria o ICMS varia por estado/ST e a comparação seria imprecisa).
-  const ehServico = ativComparativo === "Serviços"
-  const simulavel = ehServico && (isSN ? totalPresumido > 0 : parseBR(cd.rbt12) > 0 && totalSimples > 0)
+  // Serviços: comparativo 100% derivável (ISS conhecido). Comércio/indústria: só é
+  // simulável quando há ICMS p/ o lado Presumido (real, se LP, ou estimado por %).
+  const icmsOk = ehServico || (isLP ? parseBR(cd.icmsRecolher) > 0 : parseBR(cd.icmsCompPct) > 0)
+  const dadosOk = isSN ? totalPresumido > 0 : parseBR(cd.rbt12) > 0 && totalSimples > 0
+  const simulavel = icmsOk && dadosOk
   return {
     linhas, totalSimples, totalPresumido,
     economia: Math.abs(totalSimples - totalPresumido),
     melhor: totalSimples <= totalPresumido ? "Simples Nacional" : "Lucro Presumido",
-    atual, simulavel,
+    atual, simulavel, estimado: !ehServico,
   }
 }

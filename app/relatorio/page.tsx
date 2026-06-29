@@ -10,7 +10,7 @@ import { uid, getParametros, getDraft, saveDraft, clearDraft } from "@/lib/stora
 import { PARAMETROS_PADRAO, type ParametrosFiscais } from "@/lib/config"
 import { toastSuccess, toastError, toastInfo, toastWarning } from "@/lib/toast"
 import { RelatorioMensal } from "@/components/RelatorioMensal"
-import type { Anexo, Atividade, ClientData, ExtraTax, Pendencia, Regime } from "@/lib/types"
+import type { Anexo, Apuracao, Atividade, ClientData, ExtraTax, Pendencia, Regime } from "@/lib/types"
 
 const ITEM_GRUPOS = ["DAS", "Folha", "PIS/COFINS", "IRPJ/CSLL", "ISS", "ICMS", "Parcelamento", "Outros"]
 const isoToBR = (s: string) => { const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? `${m[3]}/${m[2]}/${m[1]}` : s }
@@ -98,10 +98,11 @@ function DateBR({ value, onChange }: { value?: string; onChange: (v: string) => 
 function Section({ n, title, subtitle, open, onToggle, children }: { n: number; title: string; subtitle?: string; open: boolean; onToggle: () => void; children: React.ReactNode }) {
   return (
     <div className="card overflow-hidden">
-      <button type="button" onClick={onToggle} aria-expanded={open} className="w-full flex items-center gap-3 p-4 text-left hover:bg-[#faf8f3] transition-colors">
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--navy)] text-white text-xs font-bold">{n}</span>
+      <button type="button" onClick={onToggle} aria-expanded={open} className={"w-full flex items-center gap-3 p-4 text-left transition-colors " + (open ? "bg-[var(--tint)]" : "hover:bg-[#faf8f3]")}>
+        <i className="block h-0.5 w-4 shrink-0 rounded-sm" style={{ background: "var(--gold-grad)" }} aria-hidden="true" />
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--navy)] text-white text-xs font-bold" style={{ fontFamily: "Jost, sans-serif" }}>{n}</span>
         <span className="flex-1 min-w-0">
-          <span className="block font-semibold leading-tight">{title}</span>
+          <span className="block font-semibold leading-tight" style={{ fontFamily: "Jost, sans-serif" }}>{title}</span>
           {subtitle && <span className="block text-xs text-[var(--muted)] truncate">{subtitle}</span>}
         </span>
         <ChevronDown className={"h-4 w-4 shrink-0 text-[var(--muted)] transition-transform " + (open ? "rotate-180" : "")} />
@@ -109,6 +110,55 @@ function Section({ n, title, subtitle, open, onToggle, children }: { n: number; 
       {open && <div className="px-5 pb-5 pt-4 border-t border-[var(--line)]">{children}</div>}
     </div>
   )
+}
+
+// Cockpit de KPIs ao vivo — leitura instantânea do resultado enquanto se edita.
+// Lê direto da apuração: impostos do mês (competência) × total a recolher (com parcelamentos).
+function Cockpit({ ap }: { ap: Apuracao }) {
+  const jost = { fontFamily: "Jost, sans-serif" }
+  const cells = [
+    { k: "Faturamento", v: fmtBRL(ap.revenue) },
+    { k: "Impostos do mês", v: fmtBRL(ap.totPagarMes) },
+    { k: "Alíquota efetiva", v: fmtPct(ap.aliqEfetiva) },
+    { k: "Total a recolher", v: fmtBRL(ap.totPagar) },
+  ]
+  return (
+    <div className="rounded-xl border border-[var(--line)] overflow-hidden mb-5 no-print">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-[var(--line)]">
+        {cells.map((c, i) => (
+          <div key={i} className="bg-white px-4 py-3">
+            <div className="text-[10px] font-semibold uppercase text-[var(--gold)] mb-1.5" style={{ ...jost, letterSpacing: ".12em" }}>{c.k}</div>
+            <div className="text-xl font-semibold text-[var(--navy)] tabular-nums" style={jost}>{c.v}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// Detecta tela larga (≥lg) p/ alternar entre split-view (editor + preview lado a
+// lado) e o fluxo de abas no mobile. Default false (mobile-first) p/ casar com o SSR.
+function useIsWide() {
+  const [wide, setWide] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)")
+    const on = () => setWide(mq.matches)
+    on()
+    mq.addEventListener("change", on)
+    return () => mq.removeEventListener("change", on)
+  }, [])
+  return wide
+}
+
+// Atrasa um valor: o preview (relatório A4, DOM pesado) só re-renderiza quando o
+// usuário pausa a digitação. O cockpit e os inputs continuam instantâneos.
+function useDebounced<T>(value: T, ms: number): T {
+  const [v, setV] = useState(value)
+  useEffect(() => {
+    const id = setTimeout(() => setV(value), ms)
+    return () => clearTimeout(id)
+  }, [value, ms])
+  return v
 }
 
 export default function RelatorioPage() {
@@ -199,6 +249,10 @@ export default function RelatorioPage() {
   }
 
   const ap = useMemo(() => computeApuracao(cd, params), [cd, params])
+  const isWide = useIsWide()
+  // Apuração "atrasada" só para o preview/export — evita re-render do relatório a cada tecla.
+  const cdView = useDebounced(cd, 250)
+  const apView = useMemo(() => computeApuracao(cdView, params), [cdView, params])
   const compLabel = cd.compMonth ? `${MONTHS[parseInt(cd.compMonth) - 1]}/${cd.compYear || ""}` : ""
 
   function applyPgdas(raw: string): boolean {
@@ -236,6 +290,12 @@ export default function RelatorioPage() {
       toastInfo(`Segregação: ${parts.join(" • ")}`)
     }
     res.warnings?.forEach((w) => toastWarning(w))
+    // Comércio/indústria: o comparativo com o Lucro Presumido precisa do ICMS efetivo,
+    // que NÃO vem no PGDAS-D (o ICMS do DAS é o do Simples). Avisa onde informar.
+    const ativImp = (f.atividade as string) || (f.anexo === "Anexo I" ? "Comércio" : f.anexo === "Anexo II" ? "Indústria" : "Serviços")
+    if (ativImp !== "Serviços" && !parseBR(cd.icmsCompPct)) {
+      toastWarning("Para comparar com o Lucro Presumido, informe o ICMS efetivo (%) em “Faturamento” (Seção 3). O ICMS não vem no PGDAS-D.")
+    }
     return true
   }
 
@@ -270,23 +330,29 @@ export default function RelatorioPage() {
     <div className="p-6 lg:p-8">
       <div className="flex items-start justify-between gap-3 mb-6 no-print">
         <div>
-          <h1 className="font-serif text-2xl text-[var(--navy)]">Relatório Mensal</h1>
+          <h1 className="text-2xl text-[var(--navy)]" style={{ fontFamily: "Jost, sans-serif", fontWeight: 600 }}>Relatório Mensal</h1>
           <p className="text-sm text-[var(--muted)] mt-1">Importe o PGDAS-D (Simples) ou informe os dados (Lucro Presumido/Real, MEI) e gere o relatório para baixar ou imprimir.</p>
         </div>
         <div className="flex flex-wrap gap-2 justify-end">
-          {tab === "editar" && <button className="btn btn-outline" onClick={limparTudo} title="Apaga o rascunho e recomeça"><Trash2 className="h-4 w-4" /> Limpar</button>}
-          {tab === "visualizar" && <button className="btn btn-outline" disabled={exporting} onClick={baixarPdf}><Download className="h-4 w-4" /> {exporting ? "Gerando…" : "Baixar PDF"}</button>}
-          {tab === "visualizar" && <button className="btn btn-gold" onClick={() => window.print()}><Printer className="h-4 w-4" /> Imprimir / PDF</button>}
+          {(isWide || tab === "editar") && <button className="btn btn-outline" onClick={limparTudo} title="Apaga o rascunho e recomeça"><Trash2 className="h-4 w-4" /> Limpar</button>}
+          {(isWide || tab === "visualizar") && <button className="btn btn-outline" disabled={exporting} onClick={baixarPdf}><Download className="h-4 w-4" /> {exporting ? "Gerando…" : "Baixar PDF"}</button>}
+          {(isWide || tab === "visualizar") && <button className="btn btn-gold" onClick={() => window.print()}><Printer className="h-4 w-4" /> Imprimir / PDF</button>}
         </div>
       </div>
 
-      <div className="flex gap-1 mb-5 no-print">
-        <button className={"btn " + (tab === "editar" ? "btn-primary" : "btn-outline")} onClick={() => setTab("editar")}><FileText className="h-4 w-4" /> Editar</button>
-        <button className={"btn " + (tab === "visualizar" ? "btn-primary" : "btn-outline")} onClick={() => setTab("visualizar")}><Calculator className="h-4 w-4" /> Visualizar</button>
-      </div>
+      <Cockpit ap={ap} />
 
-      {tab === "editar" ? (
-        <div className="space-y-4 no-print max-w-4xl">
+      {/* Abas só no mobile/tablet — em ≥lg o split mostra editor e preview juntos */}
+      {!isWide && (
+        <div className="flex gap-1 mb-5 no-print">
+          <button className={"btn " + (tab === "editar" ? "btn-primary" : "btn-outline")} onClick={() => setTab("editar")}><FileText className="h-4 w-4" /> Editar</button>
+          <button className={"btn " + (tab === "visualizar" ? "btn-primary" : "btn-outline")} onClick={() => setTab("visualizar")}><Calculator className="h-4 w-4" /> Visualizar</button>
+        </div>
+      )}
+
+      <div className={isWide ? "grid grid-cols-2 gap-6 items-start" : ""}>
+      {(isWide || tab === "editar") && (
+        <div className="space-y-4 no-print max-w-4xl lg:max-w-none min-w-0">
           {/* Atalho: importar PGDAS-D (Simples) — preenche as seções automaticamente */}
           {isSN && (
             <div className="card p-5 border-[var(--gold)] bg-[#fdfaf2]">
@@ -398,6 +464,11 @@ export default function RelatorioPage() {
               {!isMEI && cd.atividade === "Serviços" && (
                 <label className="block"><span className="label">Alíquota ISS (%){isSN ? " — p/ comparativo" : ""}</span>
                   <input className="input" value={cd.issRate ?? ""} onChange={(e) => upd("issRate", e.target.value)} placeholder={String(params.issPadrao).replace(".", ",")} /></label>
+              )}
+              {!isMEI && cd.atividade !== "Serviços" && (
+                <label className="block"><span className="label">ICMS efetivo (%) <span className="text-[var(--muted)] font-normal">— p/ comparativo</span></span>
+                  <input className="input" value={cd.icmsCompPct ?? ""} onChange={(e) => upd("icmsCompPct", e.target.value)} placeholder="ex.: 7" />
+                  <span className="mt-1 block text-[11px] leading-snug text-[var(--muted)]">ICMS sobre vendas, líquido dos créditos de entrada — estima o Lucro Presumido no comparativo.</span></label>
               )}
               <label className="block"><span className="label">Nº de notas emitidas <span className="text-[var(--muted)] font-normal">(ticket médio)</span></span>
                 <input className="input" inputMode="numeric" value={cd.numNotas || ""} onChange={(e) => upd("numNotas", e.target.value.replace(/\D/g, ""))} placeholder="ex.: 312" /></label>
@@ -533,15 +604,19 @@ export default function RelatorioPage() {
           </Section>
 
         </div>
-      ) : (
-        (ap.revenue > 0 || ap.taxes.some((t) => parseBR(t.value) > 0)) ? (
-          <div className="overflow-auto">
-            <RelatorioMensal cd={cd} ap={ap} evolution={[]} params={params} />
-          </div>
-        ) : (
-          <div className="card p-10 text-center text-sm text-[var(--muted)] no-print">Selecione a empresa, a competência e informe o faturamento, a folha ou ao menos uma guia (ou importe o PGDAS-D) para ver o relatório.</div>
-        )
       )}
+      {(isWide || tab === "visualizar") && (
+        <div className={"min-w-0" + (isWide ? " lg:sticky lg:top-6" : "")}>
+          {(apView.revenue > 0 || apView.taxes.some((t) => parseBR(t.value) > 0)) ? (
+            <div className="rounded-xl border border-[var(--line)] overflow-auto bg-[#52544a] lg:max-h-[calc(100vh-7.5rem)] print:max-h-none print:overflow-visible print:border-0">
+              <div className="rep-scaler"><RelatorioMensal cd={cdView} ap={apView} evolution={[]} params={params} /></div>
+            </div>
+          ) : (
+            <div className="card p-10 text-center text-sm text-[var(--muted)] no-print">Informe o faturamento, a folha ou ao menos uma guia (ou importe o PGDAS-D) para ver o relatório ao vivo.</div>
+          )}
+        </div>
+      )}
+      </div>
     </div>
   )
 }

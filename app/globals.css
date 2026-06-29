@@ -39,6 +39,14 @@ html, body {
 .label { @apply block text-xs font-semibold text-[var(--muted)] mb-1; }
 .chip { @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold; }
 
+/* Preview ao vivo (split-view): escala o relatório só na tela em ≥lg.
+   Impressão e exportação (html2canvas adiciona .exporting em #rep-overlay)
+   voltam a 100% para o PDF/print sair em tamanho A4 cheio. */
+@media (min-width: 1024px) {
+  .rep-scaler { zoom: 0.62; }
+}
 @media print {
   .no-print { display: none !important; }
+  .rep-scaler { zoom: 1 !important; }
 }
+.rep-scaler:has(.gn-doc.exporting) { zoom: 1 !important; }

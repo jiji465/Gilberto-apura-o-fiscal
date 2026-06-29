@@ -57,6 +57,9 @@ export interface ClientData {
   irrfFolha?: string
   /** ICMS a recolher (Lucro Presumido comércio/indústria) — valor digitado. */
   icmsRecolher?: string
+  /** ICMS efetivo (% sobre vendas, líquido de créditos) usado p/ ESTIMAR o lado
+   *  Lucro Presumido no comparativo de comércio/indústria (o sistema não tem as entradas). */
+  icmsCompPct?: string
   equipHospitalar?: boolean
   ret?: Record<string, string>
   extraTaxes?: ExtraTax[]
@@ -185,6 +188,10 @@ export interface Apuracao {
   totApurado: number
   totRetido: number
   totPagar: number
+  /** Impostos próprios da competência (exclui guias manuais: parcelamentos, avulsas). */
+  totApuradoMes: number
+  /** Total a pagar só dos impostos da competência (base da carga/rosca/KPI/parecer). */
+  totPagarMes: number
   aliqEfetiva: number
   economias: Economia[]
   economiaTributaria: number
