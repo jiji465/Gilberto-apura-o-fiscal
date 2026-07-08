@@ -3,7 +3,11 @@
 // simulação de regime para a comparação de economia. Monetários em string pt-BR.
 import { parseBR, fmtNum } from "./format"
 import { PARAMETROS_PADRAO, type ParametrosFiscais } from "./config"
-import type { Apuracao, ClientData, Economia, LpInfo, MeiInfo, RepartItem, SnInfo, TaxRow } from "./types"
+import type { Apuracao, ApuracaoAtividade, Atividade, ClientData, Economia, LpInfo, MeiInfo, RepartItem, SnInfo, TaxRow } from "./types"
+
+/** Conversões entre anexo (Simples) e tipo de atividade (Lucro Presumido). */
+const tipoDoAnexo = (anexo?: string): Atividade => (anexo === "Anexo I" ? "Comércio" : anexo === "Anexo II" ? "Indústria" : "Serviços")
+const anexoDoTipo = (tipo?: Atividade): string => (tipo === "Comércio" ? "Anexo I" : tipo === "Indústria" ? "Anexo II" : "Anexo III")
 
 /** Base de cálculo presumida do LP com a majoração da LC 224/2025 (presunção +X%
  *  na parcela de receita acima do limite anual; proporção mensal = limite/12). */
@@ -214,7 +218,12 @@ export const dueDate = (compMonth?: string, compYear?: string, tax = ""): string
 export function computeApuracao(cd: ClientData, params: ParametrosFiscais = PARAMETROS_PADRAO): Apuracao {
   const regime = cd.regime || "Lucro Presumido"
   const atividade = cd.atividade || "Serviços"
-  const revenue = parseBR(cd.revenue)
+  // Múltiplas atividades (opcional): quando há linhas com receita, a receita da empresa
+  // é a soma delas e cada tributo por atividade usa o seu próprio enquadramento.
+  const atividadesIn = (cd.atividades || []).filter((a) => (a.descricao && a.descricao.trim() !== "") || parseBR(a.receita) > 0)
+  const multiAtiv = atividadesIn.length > 0
+  const revenue = multiAtiv ? atividadesIn.reduce((s, a) => s + parseBR(a.receita), 0) : parseBR(cd.revenue)
+  let apAtividades: ApuracaoAtividade[] | undefined
   const proLabore = parseBR(cd.proLabore)
   const folhaMensal = parseBR(cd.folhaMensal)
   const ret = cd.ret || {}
@@ -236,7 +245,11 @@ export function computeApuracao(cd: ClientData, params: ParametrosFiscais = PARA
     const anexoBase = cd.anexo || "Anexo III"
     const anexoEf = anexoEfetivo(anexoBase, fatorR, sujeitoFatorR)
     const r = calcSN(rbt12, anexoEf)
-    const dasCalc = (revenue * r.rate) / 100
+    // Multiatividade: DAS calculado = soma por atividade (cada uma na tabela do seu anexo).
+    const anexoDe = (a: (typeof atividadesIn)[number]) => a.anexo || anexoDoTipo(a.tipo) || anexoEf
+    const dasCalc = multiAtiv
+      ? atividadesIn.reduce((s, a) => s + parseBR(a.receita) * (calcSN(rbt12, anexoDe(a)).rate / 100), 0)
+      : (revenue * r.rate) / 100
     // Quando importado do PGDAS-D, o DAS oficial já considera ICMS-ST e PIS/COFINS
     // monofásico (que reduzem o valor). Nesses casos confiamos no extrato, não no
     // recálculo pela alíquota cheia. Sem extrato (entrada manual), usa o calculado.
@@ -264,6 +277,16 @@ export function computeApuracao(cd: ClientData, params: ParametrosFiscais = PARA
       })
     }
     sn.repart = repart
+    // Tabela "Receita e DAS por atividade" (só quando há mais de uma).
+    if (multiAtiv) {
+      apAtividades = atividadesIn.map((a) => {
+        const ax = anexoDe(a)
+        const dasA = a.dasAtividade && parseBR(a.dasAtividade) > 0
+          ? parseBR(a.dasAtividade)
+          : parseBR(a.receita) * (calcSN(rbt12, ax).rate / 100)
+        return { descricao: a.descricao || ax, receita: parseBR(a.receita), anexo: ax, valor: dasA, substituicaoICMS: a.substituicaoICMS, monofasica: a.monofasica }
+      })
+    }
   }
 
   // ---------- MEI ----------
@@ -285,22 +308,39 @@ export function computeApuracao(cd: ClientData, params: ParametrosFiscais = PARA
   // ---------- LUCRO PRESUMIDO / REAL ----------
   let lp: LpInfo | null = null
   if (regime === "Lucro Presumido" || regime === "Lucro Real") {
-    const equip = !!cd.equipHospitalar && atividade === "Serviços"
-    const pIrpj = equip ? 0.08 : (atividade === "Serviços" ? params.presIrpjServicos : params.presIrpjComercio) / 100
-    const pCsll = equip ? 0.12 : (atividade === "Serviços" ? params.presCsllServicos : params.presCsllComercio) / 100
-    // IRPJ/CSLL são apurados TRIMESTRALMENTE. Trabalhamos com a receita MENSAL-EQUIVALENTE
-    // (receita do trimestre ÷ 3): quando o operador informa a receita do trimestre a provisão
-    // fica exata mesmo com faturamento irregular; vazio ⇒ usa a do mês (retrocompatível).
-    // O limite do adicional (R$ 20.000/mês) equivale aos R$ 60.000/trimestre da lei.
+    // Equiparação hospitalar é recurso de empresa de serviço única (clínica) — não no multiativo.
+    const equip = !!cd.equipHospitalar && atividade === "Serviços" && !multiAtiv
+    const pIrpjTipo = (t: Atividade) => (t === "Serviços" ? params.presIrpjServicos : params.presIrpjComercio) / 100
+    const pCsllTipo = (t: Atividade) => (t === "Serviços" ? params.presCsllServicos : params.presCsllComercio) / 100
+    const pIrpj = equip ? 0.08 : pIrpjTipo(atividade)
+    const pCsll = equip ? 0.12 : pCsllTipo(atividade)
+    // IRPJ/CSLL são apurados TRIMESTRALMENTE. Atividade única: receita MENSAL-EQUIVALENTE
+    // (receita do trimestre ÷ 3, ou a do mês). Multiatividade: base = soma por atividade,
+    // cada uma na sua presunção. O limite do adicional (R$ 20.000/mês) = R$ 60.000/trimestre.
     const recTrim = parseBR(cd.receitaTrimestre)
     const mesEquiv = recTrim > 0 ? recTrim / 3 : revenue
-    const baseIrpj = baseLP(mesEquiv, pIrpj, params)
-    const baseCsll = baseLP(mesEquiv, pCsll, params)
+    const tipoDe = (a: (typeof atividadesIn)[number]) => a.tipo || tipoDoAnexo(a.anexo)
+    const baseIrpj = multiAtiv
+      ? atividadesIn.reduce((s, a) => s + baseLP(parseBR(a.receita), pIrpjTipo(tipoDe(a)), params), 0)
+      : baseLP(mesEquiv, pIrpj, params)
+    const baseCsll = multiAtiv
+      ? atividadesIn.reduce((s, a) => s + baseLP(parseBR(a.receita), pCsllTipo(tipoDe(a)), params), 0)
+      : baseLP(mesEquiv, pCsll, params)
     const irpj = baseIrpj * (params.irpjRate / 100)
     const adic = Math.max(0, baseIrpj - params.irpjAdicLimiteMensal) * (params.irpjAdicRate / 100)
     const csll = baseCsll * (params.csllRate / 100)
-    const issRate = cd.issRate ? parseBR(cd.issRate) : (atividade === "Serviços" ? params.issPadrao : 0)
+    // Base do ISS: em multiatividade só a receita das linhas de serviço.
+    const recServ = multiAtiv
+      ? atividadesIn.filter((a) => tipoDe(a) === "Serviços").reduce((s, a) => s + parseBR(a.receita), 0)
+      : (atividade === "Serviços" ? revenue : 0)
+    const issRate = cd.issRate ? parseBR(cd.issRate) : (recServ > 0 ? params.issPadrao : 0)
     lp = { equip, pIrpj, pCsll, baseIrpj, baseCsll, irpj, adic, csll, issRate }
+    if (multiAtiv) {
+      apAtividades = atividadesIn.map((a) => {
+        const t = tipoDe(a)
+        return { descricao: a.descricao || t, receita: parseBR(a.receita), tipo: t, valor: baseLP(parseBR(a.receita), pIrpjTipo(t), params) }
+      })
+    }
 
     const pushLP = (tax: string, base: number, rate: number, valor: number, obs: string, group: string, dueTax?: string) => {
       taxes.push({
@@ -311,12 +351,14 @@ export function computeApuracao(cd: ClientData, params: ParametrosFiscais = PARA
     }
     pushLP("PIS", revenue, params.pisCumulativo, revenue * (params.pisCumulativo / 100), `Regime cumulativo (${params.pisCumulativo.toFixed(2).replace(".", ",")}%)`, "PIS/COFINS")
     pushLP("COFINS", revenue, params.cofinsCumulativo, revenue * (params.cofinsCumulativo / 100), `Regime cumulativo (${params.cofinsCumulativo.toFixed(0)}%)`, "PIS/COFINS")
-    if (atividade === "Serviços" && issRate > 0)
-      pushLP("ISS", revenue, issRate, (revenue * issRate) / 100, "Imposto municipal sobre serviços", "ISS", "ISS")
+    if (recServ > 0 && issRate > 0)
+      pushLP("ISS", recServ, issRate, (recServ * issRate) / 100, "Imposto municipal sobre serviços", "ISS", "ISS")
     const provNota = recTrim > 0 ? "provisão mensal (1/3 do trimestre)" : "provisão mensal (1/3) — informe a receita do trimestre p/ exatidão"
-    pushLP("IRPJ", baseIrpj, params.irpjRate, irpj, `Presunção ${(pIrpj * 100).toFixed(0)}%${equip ? " (equiparação hospitalar)" : ""} • apuração trimestral · ${provNota}`, "IRPJ/CSLL", "IRPJ")
+    const presIrpjNota = multiAtiv ? "Presunção por atividade" : `Presunção ${(pIrpj * 100).toFixed(0)}%${equip ? " (equiparação hospitalar)" : ""}`
+    const presCsllNota = multiAtiv ? "Presunção por atividade" : `Presunção ${(pCsll * 100).toFixed(0)}%${equip ? " (equiparação hospitalar)" : ""}`
+    pushLP("IRPJ", baseIrpj, params.irpjRate, irpj, `${presIrpjNota} • apuração trimestral · ${provNota}`, "IRPJ/CSLL", "IRPJ")
     if (adic > 0) pushLP("Adicional IRPJ", Math.max(0, baseIrpj - params.irpjAdicLimiteMensal), params.irpjAdicRate, adic, `10% sobre o que excede R$ 60.000/trimestre (base mensal-equiv. acima de R$ ${fmtNum(params.irpjAdicLimiteMensal)})`, "IRPJ/CSLL", "IRPJ")
-    pushLP("CSLL", baseCsll, params.csllRate, csll, `Presunção ${(pCsll * 100).toFixed(0)}%${equip ? " (equiparação hospitalar)" : ""} • apuração trimestral · ${provNota}`, "IRPJ/CSLL", "CSLL")
+    pushLP("CSLL", baseCsll, params.csllRate, csll, `${presCsllNota} • apuração trimestral · ${provNota}`, "IRPJ/CSLL", "CSLL")
 
   }
 
@@ -500,7 +542,7 @@ export function computeApuracao(cd: ClientData, params: ParametrosFiscais = PARA
   const economiaTributaria = economias.filter((e) => e.tipo !== "retencao" && e.valor > 0).reduce((s, e) => s + e.valor, 0)
   const economiaCaixa = economias.filter((e) => e.tipo === "retencao").reduce((s, e) => s + e.valor, 0)
 
-  return { regime, atividade, revenue, taxes, sn, lp, mei, ret, totApurado, totRetido, totPagar, totApuradoMes, totPagarMes, aliqEfetiva, economias, economiaTributaria, economiaCaixa }
+  return { regime, atividade, revenue, atividades: apAtividades, taxes, sn, lp, mei, ret, totApurado, totRetido, totPagar, totApuradoMes, totPagarMes, aliqEfetiva, economias, economiaTributaria, economiaCaixa }
 }
 
 /* ===== Simulação Lucro Presumido (p/ a comparação de economia do relatório) ===== */
