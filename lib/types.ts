@@ -64,8 +64,9 @@ export interface ClientData {
   ret?: Record<string, string>
   extraTaxes?: ExtraTax[]
   repartManual?: Record<string, string>
-  /** Ajustes manuais por tributo (grade "Impostos a recolher"): valor e/ou vencimento. */
-  overrides?: Record<string, { value?: string; dueDate?: string }>
+  /** Ajustes manuais por tributo (grade "Impostos a recolher"): valor, vencimento
+   *  e/ou se conta na competência (carga efetiva + composição). */
+  overrides?: Record<string, { value?: string; dueDate?: string; conta?: boolean }>
   dasOfficial?: string
   // segregação lida do PGDAS-D (comércio: economia por monofásico/ST)
   segIcmsST?: number
@@ -87,6 +88,13 @@ export interface Pendencia {
   competencia?: string
   /** Situação livre: "vencido", "em cobrança", "dívida ativa", "parcelar", etc. */
   situacao?: string
+  /** Guia emitida e paga neste mês: a pendência entra no "Total a recolher" e na
+   *  lista de guias (fora da carga efetiva por padrão, por ser de mês anterior). */
+  emitiuGuia?: boolean
+  /** Vencimento da guia emitida (DD/MM/AAAA), quando `emitiuGuia`. */
+  vencimento?: string
+  /** Guia emitida: conta na carga efetiva? Padrão `false` (débito de mês anterior). */
+  contaCompetencia?: boolean
 }
 
 export interface ExtraTax {
@@ -102,6 +110,9 @@ export interface ExtraTax {
   /** Parcelamento: número da parcela e total (ex.: "3" e "12"). */
   parcelaNum?: string
   parcelaTot?: string
+  /** Conta na competência (carga efetiva + composição). Guias avulsas nascem `true`;
+   *  parcelamentos nascem `false`. `undefined` ⇒ usa o padrão pelo grupo. */
+  contaCompetencia?: boolean
 }
 
 export interface TaxRow {
@@ -115,6 +126,9 @@ export interface TaxRow {
   obs: string
   group: string
   manual?: boolean
+  /** Conta na competência: entra na alíquota efetiva e na composição (rosca).
+   *  Definido pelo motor por linha (guias do mês = true; parcelamentos = false). */
+  contaCompetencia?: boolean
   /** Preenchido nas linhas manuais com o id do extraTax (p/ a grade gravar de volta). */
   id?: string
   /** Preenchido pelo motor p/ itens de Parcelamento: "3 de 12". */

@@ -94,6 +94,20 @@ function DateBR({ value, onChange }: { value?: string; onChange: (v: string) => 
   return <input className="input" inputMode="numeric" value={value || ""} onChange={(e) => onChange(mask(e.target.value))} placeholder="DD/MM/AAAA" />
 }
 
+// Botão-pílula "conta na carga efetiva" (dimensão competência). Ligado = a guia soma
+// na alíquota efetiva e aparece na composição (rosca). Desligado = só no caixa do mês.
+function ContaToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button" onClick={onToggle} aria-pressed={on}
+      title={on ? "Conta na carga efetiva — clique para excluir" : "Fora da carga efetiva — clique para incluir"}
+      className={"w-full text-[11px] font-semibold px-2 py-2 rounded-md border transition-colors " + (on ? "bg-[var(--navy)] text-white border-[var(--navy)]" : "bg-white text-[var(--muted)] border-[var(--line)] hover:bg-[var(--tint)]")}
+    >
+      {on ? "carga ✓" : "carga ✕"}
+    </button>
+  )
+}
+
 // Seção recolhível (accordion) — cabeçalho clicável, acessível (aria-expanded), com resumo.
 function Section({ n, title, subtitle, open, onToggle, children }: { n: number; title: string; subtitle?: string; open: boolean; onToggle: () => void; children: React.ReactNode }) {
   return (
@@ -222,7 +236,7 @@ export default function RelatorioPage() {
   const updItem = (id: string | number, field: keyof ExtraTax, v: any) =>
     setCd((p) => ({ ...p, extraTaxes: (p.extraTaxes || []).map((e) => (e.id === id ? { ...e, [field]: v } : e)) }))
   const delItem = (id: string | number) => setCd((p) => ({ ...p, extraTaxes: (p.extraTaxes || []).filter((e) => e.id !== id) }))
-  const setOverride = (tax: string, field: "value" | "dueDate", v: string) =>
+  const setOverride = (tax: string, field: "value" | "dueDate" | "conta", v: string | boolean) =>
     setCd((p) => ({ ...p, overrides: { ...(p.overrides || {}), [tax]: { ...(p.overrides?.[tax] || {}), [field]: v } } }))
   const recalcular = () => setCd((p) => { const n = { ...p }; delete n.overrides; return n })
 
@@ -237,7 +251,7 @@ export default function RelatorioPage() {
   }
   // ----- Pendências / débitos em aberto (informativos — NÃO entram no total) -----
   const addPend = () => setCd((p) => ({ ...p, pendencias: [...(p.pendencias || []), { id: uid(), descricao: "", valor: "", competencia: "", situacao: "" }] }))
-  const updPend = (id: string, field: keyof Pendencia, v: string) =>
+  const updPend = (id: string, field: keyof Pendencia, v: string | boolean) =>
     setCd((p) => ({ ...p, pendencias: (p.pendencias || []).map((x) => (x.id === id ? { ...x, [field]: v } : x)) }))
   const delPend = (id: string) => setCd((p) => ({ ...p, pendencias: (p.pendencias || []).filter((x) => x.id !== id) }))
   const colarPendencias = (text: string) => {
@@ -513,23 +527,26 @@ export default function RelatorioPage() {
               </div>
             </div>
             <div className="hidden md:grid grid-cols-12 gap-2 text-[10px] uppercase font-semibold text-[var(--muted)] px-1 mb-1">
-              <div className="col-span-5">Tributo</div><div className="col-span-3">Valor (R$)</div><div className="col-span-3">Vencimento</div><div className="col-span-1"></div>
+              <div className="col-span-4">Tributo</div><div className="col-span-3">Valor (R$)</div><div className="col-span-3">Vencimento</div><div className="col-span-2" title="Conta na alíquota efetiva e na composição">Carga</div>
             </div>
             <div className="space-y-2">
               {ap.taxes.filter((t) => !t.manual).map((t, i) => (
                 <div key={t.tax || i} className="grid grid-cols-2 md:grid-cols-12 gap-2 items-center">
-                  <div className="col-span-2 md:col-span-5"><div className="px-1 text-sm font-medium text-[var(--ink)]">{t.tax}<span className="text-[10px] text-[var(--muted)] ml-2 uppercase tracking-wide">{t.group}</span></div></div>
+                  <div className="col-span-2 md:col-span-4"><div className="px-1 text-sm font-medium text-[var(--ink)]">{t.tax}<span className="text-[10px] text-[var(--muted)] ml-2 uppercase tracking-wide">{t.group}</span></div></div>
                   <div className="md:col-span-3"><Money value={cd.overrides?.[t.tax]?.value ?? t.value} onChange={(v) => setOverride(t.tax, "value", v)} /></div>
                   <div className="md:col-span-3"><DateBR value={cd.overrides?.[t.tax]?.dueDate ?? t.dueDate} onChange={(v) => setOverride(t.tax, "dueDate", v)} /></div>
-                  <div className="md:col-span-1" />
+                  <div className="md:col-span-2"><ContaToggle on={!!t.contaCompetencia} onToggle={() => setOverride(t.tax, "conta", !t.contaCompetencia)} /></div>
                 </div>
               ))}
               {(cd.extraTaxes || []).filter((e) => e.group !== "Parcelamento").map((e) => (
                 <div key={e.id} className="grid grid-cols-2 md:grid-cols-12 gap-2 items-center">
-                  <div className="col-span-2 md:col-span-5"><input className="input" value={e.tax} onChange={(ev) => updItem(e.id!, "tax", ev.target.value)} placeholder="Nome da guia (ex.: DARF IRRF)" /></div>
+                  <div className="col-span-2 md:col-span-4"><input className="input" value={e.tax} onChange={(ev) => updItem(e.id!, "tax", ev.target.value)} placeholder="Nome da guia (ex.: DARF IRRF)" /></div>
                   <div className="md:col-span-3"><Money value={e.value} onChange={(v) => updItem(e.id!, "value", v)} /></div>
                   <div className="md:col-span-3"><DateBR value={e.dueDate} onChange={(v) => updItem(e.id!, "dueDate", v)} /></div>
-                  <div className="md:col-span-1"><button className="btn btn-outline px-2 py-2 text-red-600 w-full" onClick={() => delItem(e.id!)} aria-label="Remover"><Trash2 className="h-3.5 w-3.5" /></button></div>
+                  <div className="md:col-span-2 flex items-center gap-1">
+                    <ContaToggle on={e.contaCompetencia ?? true} onToggle={() => updItem(e.id!, "contaCompetencia", !(e.contaCompetencia ?? true))} />
+                    <button className="btn btn-outline px-2 py-2 text-red-600 shrink-0" onClick={() => delItem(e.id!)} aria-label="Remover"><Trash2 className="h-3.5 w-3.5" /></button>
+                  </div>
                 </div>
               ))}
               {ap.taxes.filter((t) => !t.manual).length === 0 && (cd.extraTaxes || []).filter((e) => e.group !== "Parcelamento").length === 0 && <div className="text-sm text-[var(--muted)] px-1">Informe o faturamento (ou importe o PGDAS-D) para calcular os impostos, ou clique em “Adicionar guia”.</div>}
@@ -559,16 +576,19 @@ export default function RelatorioPage() {
               <button className="btn btn-outline text-xs px-2 py-1" onClick={addParcela}><Plus className="h-3.5 w-3.5" /> Adicionar</button>
             </div>
             <div className="hidden md:grid grid-cols-12 gap-2 text-[10px] uppercase font-semibold text-[var(--muted)] px-1 mb-1">
-              <div className="col-span-4">Descrição</div><div className="col-span-2">Parcela</div><div className="col-span-3">Valor (R$)</div><div className="col-span-2">Vencimento</div><div className="col-span-1"></div>
+              <div className="col-span-3">Descrição</div><div className="col-span-2">Parcela</div><div className="col-span-3">Valor (R$)</div><div className="col-span-2">Vencimento</div><div className="col-span-2" title="Conta na alíquota efetiva e na composição">Carga</div>
             </div>
             <div className="space-y-2">
               {(cd.extraTaxes || []).filter((e) => e.group === "Parcelamento").map((e) => (
                 <div key={e.id} className="grid grid-cols-2 md:grid-cols-12 gap-2 items-center">
-                  <div className="col-span-2 md:col-span-4"><input className="input" value={e.tax} onChange={(ev) => updItem(e.id!, "tax", ev.target.value)} placeholder="Ex.: Refis · DAS" /></div>
+                  <div className="col-span-2 md:col-span-3"><input className="input" value={e.tax} onChange={(ev) => updItem(e.id!, "tax", ev.target.value)} placeholder="Ex.: Refis · DAS" /></div>
                   <div className="md:col-span-2 flex items-center gap-1"><input className="input text-center" inputMode="numeric" value={e.parcelaNum || ""} onChange={(ev) => updItem(e.id!, "parcelaNum", ev.target.value.replace(/\D/g, ""))} placeholder="3" /><span className="text-[var(--muted)]">/</span><input className="input text-center" inputMode="numeric" value={e.parcelaTot || ""} onChange={(ev) => updItem(e.id!, "parcelaTot", ev.target.value.replace(/\D/g, ""))} placeholder="10" /></div>
                   <div className="md:col-span-3"><Money value={e.value} onChange={(v) => updItem(e.id!, "value", v)} /></div>
                   <div className="md:col-span-2"><DateBR value={e.dueDate} onChange={(v) => updItem(e.id!, "dueDate", v)} /></div>
-                  <div className="md:col-span-1"><button className="btn btn-outline px-2 py-2 text-red-600 w-full" onClick={() => delItem(e.id!)} aria-label="Remover"><Trash2 className="h-3.5 w-3.5" /></button></div>
+                  <div className="md:col-span-2 flex items-center gap-1">
+                    <ContaToggle on={e.contaCompetencia ?? false} onToggle={() => updItem(e.id!, "contaCompetencia", !(e.contaCompetencia ?? false))} />
+                    <button className="btn btn-outline px-2 py-2 text-red-600 shrink-0" onClick={() => delItem(e.id!)} aria-label="Remover"><Trash2 className="h-3.5 w-3.5" /></button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -588,11 +608,26 @@ export default function RelatorioPage() {
               </div>
               <div className="space-y-2">
                 {(cd.pendencias || []).map((p) => (
-                  <div key={p.id} className="grid grid-cols-2 md:grid-cols-12 gap-2 items-center">
-                    <div className="col-span-2 md:col-span-5"><input className="input" value={p.descricao} onChange={(ev) => updPend(p.id!, "descricao", ev.target.value)} placeholder="Ex.: DAS em atraso" /></div>
-                    <div className="md:col-span-3"><Money value={p.valor} onChange={(v) => updPend(p.id!, "valor", v)} /></div>
-                    <div className="md:col-span-2"><input className="input" inputMode="numeric" value={p.competencia || ""} onChange={(ev) => updPend(p.id!, "competencia", maskComp(ev.target.value))} placeholder="MM/AAAA" /></div>
-                    <div className="md:col-span-2 flex items-center gap-1"><input className="input" value={p.situacao || ""} onChange={(ev) => updPend(p.id!, "situacao", ev.target.value)} placeholder="vencido" /><button className="btn btn-outline px-2 py-2 text-red-600" onClick={() => delPend(p.id!)} aria-label="Remover"><Trash2 className="h-3.5 w-3.5" /></button></div>
+                  <div key={p.id} className="rounded-lg border border-[var(--line)] p-2 space-y-2">
+                    <div className="grid grid-cols-2 md:grid-cols-12 gap-2 items-center">
+                      <div className="col-span-2 md:col-span-5"><input className="input" value={p.descricao} onChange={(ev) => updPend(p.id!, "descricao", ev.target.value)} placeholder="Ex.: DAS em atraso" /></div>
+                      <div className="md:col-span-3"><Money value={p.valor} onChange={(v) => updPend(p.id!, "valor", v)} /></div>
+                      <div className="md:col-span-2"><input className="input" inputMode="numeric" value={p.competencia || ""} onChange={(ev) => updPend(p.id!, "competencia", maskComp(ev.target.value))} placeholder="MM/AAAA" /></div>
+                      <div className="md:col-span-2 flex items-center gap-1"><input className="input" value={p.situacao || ""} onChange={(ev) => updPend(p.id!, "situacao", ev.target.value)} placeholder="vencido" /><button className="btn btn-outline px-2 py-2 text-red-600 shrink-0" onClick={() => delPend(p.id!)} aria-label="Remover"><Trash2 className="h-3.5 w-3.5" /></button></div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3 pl-1">
+                      <label className="flex items-center gap-2 text-xs text-[var(--ink)] cursor-pointer">
+                        <input type="checkbox" checked={!!p.emitiuGuia} onChange={(ev) => updPend(p.id!, "emitiuGuia", ev.target.checked)} />
+                        Emitir guia neste mês <span className="text-[var(--muted)]">(entra no total a recolher)</span>
+                      </label>
+                      {p.emitiuGuia && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] uppercase tracking-wide text-[var(--muted)]">Vencimento</span>
+                          <div className="w-32"><DateBR value={p.vencimento} onChange={(v) => updPend(p.id!, "vencimento", v)} /></div>
+                          <div className="w-24"><ContaToggle on={!!p.contaCompetencia} onToggle={() => updPend(p.id!, "contaCompetencia", !p.contaCompetencia)} /></div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -607,13 +642,19 @@ export default function RelatorioPage() {
       )}
       {(isWide || tab === "visualizar") && (
         <div className={"min-w-0" + (isWide ? " lg:sticky lg:top-6" : "")}>
-          {(apView.revenue > 0 || apView.taxes.some((t) => parseBR(t.value) > 0)) ? (
-            <div className="rounded-xl border border-[var(--line)] overflow-auto bg-[#52544a] lg:max-h-[calc(100vh-7.5rem)] print:max-h-none print:overflow-visible print:border-0">
-              <div className="rep-scaler"><RelatorioMensal cd={cdView} ap={apView} evolution={[]} params={params} /></div>
-            </div>
-          ) : (
-            <div className="card p-10 text-center text-sm text-[var(--muted)] no-print">Informe o faturamento, a folha ou ao menos uma guia (ou importe o PGDAS-D) para ver o relatório ao vivo.</div>
-          )}
+          {(() => {
+            const temValores = apView.revenue > 0 || apView.taxes.some((t) => parseBR(t.value) > 0)
+            // Sem faturamento e sem guias: ainda gera a declaração "sem movimento",
+            // desde que Cliente e Competência estejam identificados.
+            const podeSemMov = !!(cdView.clientName && cdView.compMonth && cdView.compYear)
+            return temValores || podeSemMov ? (
+              <div className="rounded-xl border border-[var(--line)] overflow-auto bg-[#52544a] lg:max-h-[calc(100vh-7.5rem)] print:max-h-none print:overflow-visible print:border-0">
+                <div className="rep-scaler"><RelatorioMensal cd={cdView} ap={apView} evolution={[]} params={params} /></div>
+              </div>
+            ) : (
+              <div className="card p-10 text-center text-sm text-[var(--muted)] no-print">Informe o faturamento, a folha ou ao menos uma guia (ou importe o PGDAS-D). Sem movimento no mês? Basta preencher <b>Cliente</b> e <b>Competência</b> para gerar a declaração sem movimento.</div>
+            )
+          })()}
         </div>
       )}
       </div>

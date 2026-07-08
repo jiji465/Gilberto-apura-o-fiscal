@@ -403,6 +403,25 @@ export function computeApuracao(cd: ClientData, params: ParametrosFiscais = PARA
       value: fmtNum(Math.max(0, apur - parseBR(e.retido))),
       dueDate: e.dueDate || "", obs: e.obs || "", group: e.group || "Outros", manual: true, id: e.id,
       parcela: isParc && e.parcelaNum ? `${e.parcelaNum} de ${e.parcelaTot || "?"}` : undefined,
+      // Guias avulsas são tributo do mês (contam por padrão); parcelamentos não.
+      contaCompetencia: e.contaCompetencia ?? !isParc,
+    })
+  })
+
+  // ---------- PENDÊNCIAS COM GUIA EMITIDA (viram guia no caixa do mês) ----------
+  // Débitos em aberto que o escritório emite e paga no mês: entram no "Total a recolher"
+  // e na lista de guias, sem redigitar. Fora da carga efetiva por padrão (mês anterior).
+  ;(cd.pendencias || []).forEach((p) => {
+    if (!p.emitiuGuia) return
+    const apur = parseBR(p.valor)
+    if (apur <= 0) return
+    taxes.push({
+      tax: p.descricao || "Débito", base: "", rate: "",
+      apurado: fmtNum(apur), retido: "", value: fmtNum(apur),
+      dueDate: p.vencimento || "",
+      obs: p.situacao ? `Débito em aberto · ${p.situacao} · guia emitida` : "Débito em aberto · guia emitida",
+      group: "Pendência", manual: true, id: p.id,
+      contaCompetencia: p.contaCompetencia ?? false,
     })
   })
 
@@ -416,15 +435,25 @@ export function computeApuracao(cd: ClientData, params: ParametrosFiscais = PARA
     if (o.dueDate) t.dueDate = o.dueDate
   })
 
+  // ---------- CONTA NA COMPETÊNCIA (carga efetiva + composição) ----------
+  // Guias do motor contam por padrão; o usuário pode desligar por linha via
+  // overrides[tax].conta. As manuais já vêm com o flag definido no push acima.
+  taxes.forEach((t) => {
+    if (t.manual) return
+    const o = ov[t.tax]
+    t.contaCompetencia = o?.conta !== undefined ? o.conta : true
+  })
+
   // ---------- TOTAIS ----------
   // Total a recolher (caixa do mês): todas as guias, inclusive manuais
   // (parcelamentos, débitos de meses anteriores e taxas avulsas).
   const totApurado = taxes.reduce((s, t) => s + parseBR(t.apurado), 0)
   const totRetido = taxes.reduce((s, t) => s + parseBR(t.retido), 0)
   const totPagar = taxes.reduce((s, t) => s + parseBR(t.value), 0)
-  // Impostos próprios da competência: exclui guias manuais. Folha e pró-labore
-  // (INSS/IRRF) são guias normais do motor, então continuam contando aqui.
-  const ehTributoMes = (t: TaxRow) => !t.manual
+  // Impostos próprios da competência: só as guias marcadas como "conta na competência"
+  // (guias do motor por padrão + manuais que o usuário incluiu). Parcelamentos e
+  // pendências de meses anteriores ficam de fora — não inflam a alíquota efetiva.
+  const ehTributoMes = (t: TaxRow) => !!t.contaCompetencia
   const totApuradoMes = taxes.filter(ehTributoMes).reduce((s, t) => s + parseBR(t.apurado), 0)
   const totPagarMes = taxes.filter(ehTributoMes).reduce((s, t) => s + parseBR(t.value), 0)
   // Alíquota efetiva passa a usar só os impostos da competência.
