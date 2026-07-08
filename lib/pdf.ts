@@ -40,6 +40,9 @@ async function buildRelatorioPDF() {
   const pageW = pdf.internal.pageSize.getWidth()
   const pageH = pdf.internal.pageSize.getHeight()
 
+  // Garante que as fontes (auto-hospedadas) já carregaram antes de capturar,
+  // senão o html2canvas rasteriza com a fonte de fallback.
+  try { await (document as any).fonts?.ready } catch { /* browsers sem Font Loading API */ }
   // .exporting → texto em gradiente vira cor sólida e remove sombras (fidelidade)
   root.classList.add("exporting")
   try {

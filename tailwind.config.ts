@@ -10,8 +10,8 @@ const config: Config = {
         gold: { DEFAULT: "#b0892e", 2: "#9c7b2e", deep: "#7a5f1f" },
       },
       fontFamily: {
-        sans: ["IBM Plex Sans", "system-ui", "sans-serif"],
-        serif: ["Jost", "system-ui", "sans-serif"],
+        sans: ["var(--font-plex)", "system-ui", "sans-serif"],
+        serif: ["var(--font-jost)", "system-ui", "sans-serif"],
       },
     },
   },

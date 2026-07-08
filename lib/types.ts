@@ -61,6 +61,10 @@ export interface ClientData {
    *  Lucro Presumido no comparativo de comércio/indústria (o sistema não tem as entradas). */
   icmsCompPct?: string
   equipHospitalar?: boolean
+  /** Receita por atividade (empresas com mais de uma atividade). Vazio/ausente ⇒
+   *  atividade única (usa `revenue`/`anexo`/`atividade`). No Simples, autopreenchido
+   *  do PGDAS-D; no Lucro Presumido, informado à mão. */
+  atividades?: AtividadeLinha[]
   ret?: Record<string, string>
   extraTaxes?: ExtraTax[]
   repartManual?: Record<string, string>
@@ -95,6 +99,21 @@ export interface Pendencia {
   vencimento?: string
   /** Guia emitida: conta na carga efetiva? Padrão `false` (débito de mês anterior). */
   contaCompetencia?: boolean
+}
+
+/** Linha de atividade (empresa com mais de uma atividade). Monetários em string pt-BR. */
+export interface AtividadeLinha {
+  id: string
+  descricao: string
+  receita: string
+  /** Simples: anexo da atividade (fonte do enquadramento da linha). */
+  anexo?: Anexo
+  /** Lucro Presumido: tipo que define a presunção (derivável do anexo no Simples). */
+  tipo?: Atividade
+  /** Simples: parcela do DAS desta atividade, lida do PGDAS-D. */
+  dasAtividade?: string
+  substituicaoICMS?: boolean
+  monofasica?: boolean
 }
 
 export interface ExtraTax {
@@ -190,10 +209,24 @@ export interface Economia {
   fatorR?: number
 }
 
+/** Atividade já resolvida (p/ a tabela "Receita e DAS por atividade" do relatório). */
+export interface ApuracaoAtividade {
+  descricao: string
+  receita: number
+  anexo?: string
+  tipo?: Atividade
+  /** Simples: DAS/base da atividade; Lucro Presumido: base presumida somada. */
+  valor: number
+  substituicaoICMS?: boolean
+  monofasica?: boolean
+}
+
 export interface Apuracao {
   regime: Regime
   atividade: Atividade
   revenue: number
+  /** Preenchido quando a empresa tem mais de uma atividade (senão undefined). */
+  atividades?: ApuracaoAtividade[]
   taxes: TaxRow[]
   sn: SnInfo | null
   lp: LpInfo | null

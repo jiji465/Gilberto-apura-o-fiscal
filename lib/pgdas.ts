@@ -16,6 +16,8 @@ export interface PgdasAtividade {
   total: string
   substituicaoICMS: boolean
   monofasica: boolean
+  /** Anexo inferido da repartição da atividade (ISS→III, IPI→II, ICMS→I). */
+  anexo?: string
 }
 
 export interface PgdasSegregacao {
@@ -158,7 +160,9 @@ export function parsePGDAS(raw: string): PgdasResult | null {
     const recM = b.match(/Receita\s+Bruta\s+Informada[:\s]*R?\$?\s*([\d.]+,\d{2})/i)
     const subST = /Com\s+substitui[çc][ãa]o\s+tribut[áa]ria/i.test(descricao) || /Substitui[çc][ãa]o\s+tribut[áa]ria\s+de:\s*ICMS/i.test(b)
     const mono = /Tributa[çc][ãa]o\s+monof[áa]sica\s+de:/i.test(b)
-    atividades.push({ descricao, receita: recM ? recM[1] : "", repart: rp.repart, total: rp.total, substituicaoICMS: subST, monofasica: mono })
+    // Anexo da atividade pela repartição: ISS→serviços (III), IPI→indústria (II), ICMS→comércio (I).
+    const anexo = parseBR(rp.repart.ISS) > 0 ? "Anexo III" : parseBR(rp.repart.IPI) > 0 ? "Anexo II" : parseBR(rp.repart.ICMS) > 0 ? "Anexo I" : undefined
+    atividades.push({ descricao, receita: recM ? recM[1] : "", repart: rp.repart, total: rp.total, substituicaoICMS: subST, monofasica: mono, anexo })
   }
 
   if (!official) {

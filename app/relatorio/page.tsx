@@ -10,7 +10,7 @@ import { uid, getParametros, getDraft, saveDraft, clearDraft } from "@/lib/stora
 import { PARAMETROS_PADRAO, type ParametrosFiscais } from "@/lib/config"
 import { toastSuccess, toastError, toastInfo, toastWarning } from "@/lib/toast"
 import { RelatorioMensal } from "@/components/RelatorioMensal"
-import type { Anexo, Apuracao, Atividade, ClientData, ExtraTax, Pendencia, Regime } from "@/lib/types"
+import type { Anexo, Apuracao, Atividade, AtividadeLinha, ClientData, ExtraTax, Pendencia, Regime } from "@/lib/types"
 
 const ITEM_GRUPOS = ["DAS", "Folha", "PIS/COFINS", "IRPJ/CSLL", "ISS", "ICMS", "Parcelamento", "Outros"]
 const isoToBR = (s: string) => { const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? `${m[3]}/${m[2]}/${m[1]}` : s }
@@ -114,9 +114,9 @@ function Section({ n, title, subtitle, open, onToggle, children }: { n: number; 
     <div className="card overflow-hidden">
       <button type="button" onClick={onToggle} aria-expanded={open} className={"w-full flex items-center gap-3 p-4 text-left transition-colors " + (open ? "bg-[var(--tint)]" : "hover:bg-[#faf8f3]")}>
         <i className="block h-0.5 w-4 shrink-0 rounded-sm" style={{ background: "var(--gold-grad)" }} aria-hidden="true" />
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--navy)] text-white text-xs font-bold" style={{ fontFamily: "Jost, sans-serif" }}>{n}</span>
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--navy)] text-white text-xs font-bold" style={{ fontFamily: "var(--font-jost), sans-serif" }}>{n}</span>
         <span className="flex-1 min-w-0">
-          <span className="block font-semibold leading-tight" style={{ fontFamily: "Jost, sans-serif" }}>{title}</span>
+          <span className="block font-semibold leading-tight" style={{ fontFamily: "var(--font-jost), sans-serif" }}>{title}</span>
           {subtitle && <span className="block text-xs text-[var(--muted)] truncate">{subtitle}</span>}
         </span>
         <ChevronDown className={"h-4 w-4 shrink-0 text-[var(--muted)] transition-transform " + (open ? "rotate-180" : "")} />
@@ -129,7 +129,7 @@ function Section({ n, title, subtitle, open, onToggle, children }: { n: number; 
 // Cockpit de KPIs ao vivo — leitura instantânea do resultado enquanto se edita.
 // Lê direto da apuração: impostos do mês (competência) × total a recolher (com parcelamentos).
 function Cockpit({ ap }: { ap: Apuracao }) {
-  const jost = { fontFamily: "Jost, sans-serif" }
+  const jost = { fontFamily: "var(--font-jost), sans-serif" }
   const cells = [
     { k: "Faturamento", v: fmtBRL(ap.revenue) },
     { k: "Impostos do mês", v: fmtBRL(ap.totPagarMes) },
@@ -231,6 +231,10 @@ export default function RelatorioPage() {
   const updRet = (tax: string, v: string) => setCd((p) => ({ ...p, ret: { ...(p.ret || {}), [tax]: v } }))
   const updRepart = (tax: string, v: string) => setCd((p) => ({ ...p, repartManual: { ...(p.repartManual || {}), [tax]: v } }))
   const setMeiCategoria = (cat: string) => setCd((p) => ({ ...p, meiCategoria: cat, meiDasFixo: fmtNum(MEI_DAS_2026[cat]?.das ?? 0) }))
+  // Atividades (empresa com mais de uma) — receita por atividade, cada uma com seu enquadramento.
+  const addAtividade = () => setCd((p) => ({ ...p, atividades: [...(p.atividades || []), { id: uid(), descricao: "", receita: "", ...(p.regime === "Simples Nacional" ? { anexo: p.anexo || "Anexo III" } : { tipo: p.atividade || "Serviços" }) }] }))
+  const updAtividade = (id: string, field: keyof AtividadeLinha, v: any) => setCd((p) => ({ ...p, atividades: (p.atividades || []).map((a) => (a.id === id ? { ...a, [field]: v } : a)) }))
+  const delAtividade = (id: string) => setCd((p) => ({ ...p, atividades: (p.atividades || []).filter((a) => a.id !== id) }))
   // itens/guias extras (manuais) — entram nos vencimentos, composição e total
   const addItem = () => setCd((p) => ({ ...p, extraTaxes: [...(p.extraTaxes || []), { id: uid(), tax: "", value: "", group: "Outros" }] }))
   const updItem = (id: string | number, field: keyof ExtraTax, v: any) =>
@@ -274,9 +278,15 @@ export default function RelatorioPage() {
     if (!res) { toastError("Não consegui identificar. Anexe a Declaração ou o Extrato do PGDAS-D."); return false }
     const f = res.fields
     const comp = f.compMonth && f.compYear ? String(f.compMonth).padStart(2, "0") + "/" + f.compYear : cd.competenceShort
+    // Múltiplas atividades: popula a tabela por atividade (senão limpa → atividade única).
+    const multiAtiv = (res.atividades?.length || 0) > 1
+    const novasAtiv: AtividadeLinha[] | undefined = multiAtiv
+      ? res.atividades.map((a) => ({ id: uid(), descricao: a.descricao || "", receita: a.receita || "", anexo: (a.anexo as Anexo) || undefined, dasAtividade: a.total || "", substituicaoICMS: a.substituicaoICMS, monofasica: a.monofasica }))
+      : undefined
     setCd((p) => ({
       ...p,
       regime: "Simples Nacional",
+      atividades: novasAtiv,
       clientName: f.clientName || p.clientName,
       cnpj: f.cnpj ? fmtCNPJ(f.cnpj) : p.cnpj,
       compMonth: f.compMonth || p.compMonth,
@@ -344,7 +354,7 @@ export default function RelatorioPage() {
     <div className="p-6 lg:p-8">
       <div className="flex items-start justify-between gap-3 mb-6 no-print">
         <div>
-          <h1 className="text-2xl text-[var(--navy)]" style={{ fontFamily: "Jost, sans-serif", fontWeight: 600 }}>Relatório Mensal</h1>
+          <h1 className="text-2xl text-[var(--navy)]" style={{ fontFamily: "var(--font-jost), sans-serif", fontWeight: 600 }}>Relatório Mensal</h1>
           <p className="text-sm text-[var(--muted)] mt-1">Importe o PGDAS-D (Simples) ou informe os dados (Lucro Presumido/Real, MEI) e gere o relatório para baixar ou imprimir.</p>
         </div>
         <div className="flex flex-wrap gap-2 justify-end">
@@ -468,8 +478,10 @@ export default function RelatorioPage() {
           <Section n={3} title="Faturamento" open={!!openSec[3]} onToggle={() => toggleSec(3)}
             subtitle={ap.revenue > 0 ? `Receita do mês ${fmtBRL(ap.revenue)}` : "Receita do mês e acumulado 12m"}>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <label className="block"><span className="label">Faturamento do mês (R$)</span>
-                <Money value={cd.revenue} onChange={(v) => upd("revenue", v)} /></label>
+              <label className="block"><span className="label">Faturamento do mês (R$){(cd.atividades?.length || 0) > 0 ? " — soma das atividades" : ""}</span>
+                {(cd.atividades?.length || 0) > 0
+                  ? <div className="input flex items-center bg-[#f7f5ef] text-[var(--muted)] cursor-default tabular-nums">{fmtBRL(ap.revenue)}</div>
+                  : <Money value={cd.revenue} onChange={(v) => upd("revenue", v)} />}</label>
               {isSN && <label className="block"><span className="label">Faturamento acum. 12m <span className="text-[var(--muted)] font-normal">(RBT12)</span></span>
                 <Money value={cd.rbt12} onChange={(v) => upd("rbt12", v)} /></label>}
               {isLP && <label className="block"><span className="label">Receita do trimestre <span className="text-[var(--muted)] font-normal">(base IRPJ/CSLL)</span></span>
@@ -487,6 +499,38 @@ export default function RelatorioPage() {
               <label className="block"><span className="label">Nº de notas emitidas <span className="text-[var(--muted)] font-normal">(ticket médio)</span></span>
                 <input className="input" inputMode="numeric" value={cd.numNotas || ""} onChange={(e) => upd("numNotas", e.target.value.replace(/\D/g, ""))} placeholder="ex.: 312" /></label>
             </div>
+
+            {/* Atividades (opcional) — só para empresas com mais de uma atividade */}
+            {!isMEI && (
+              <div className="mt-4 pt-4 border-t border-[var(--line)]">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="font-semibold flex items-center gap-2 text-sm">Atividades <span className="text-[var(--muted)] font-normal text-xs">(opcional — só se a empresa tiver mais de uma)</span></h3>
+                  <button className="btn btn-outline text-xs px-2 py-1" onClick={addAtividade}><Plus className="h-3.5 w-3.5" /> Adicionar atividade</button>
+                </div>
+                {(cd.atividades || []).length > 0 && (
+                  <>
+                    <div className="hidden md:grid grid-cols-12 gap-2 text-[10px] uppercase font-semibold text-[var(--muted)] px-1 mb-1">
+                      <div className="col-span-5">Descrição</div><div className="col-span-3">Receita (R$)</div><div className="col-span-3">{isSN ? "Anexo" : "Tipo"}</div><div className="col-span-1"></div>
+                    </div>
+                    <div className="space-y-2">
+                      {(cd.atividades || []).map((a) => (
+                        <div key={a.id} className="grid grid-cols-2 md:grid-cols-12 gap-2 items-center">
+                          <div className="col-span-2 md:col-span-5"><input className="input" value={a.descricao} onChange={(e) => updAtividade(a.id, "descricao", e.target.value)} placeholder="Ex.: Comércio de peças" /></div>
+                          <div className="md:col-span-3"><Money value={a.receita} onChange={(v) => updAtividade(a.id, "receita", v)} /></div>
+                          <div className="md:col-span-3">
+                            {isSN
+                              ? <select className="input" value={a.anexo || ""} onChange={(e) => updAtividade(a.id, "anexo", e.target.value)}><option value="">Anexo…</option>{ANEXOS.map((x) => <option key={x} value={x}>{x}</option>)}</select>
+                              : <select className="input" value={a.tipo || ""} onChange={(e) => updAtividade(a.id, "tipo", e.target.value)}><option value="">Tipo…</option>{ATIVIDADES.map((x) => <option key={x} value={x}>{x}</option>)}</select>}
+                          </div>
+                          <div className="md:col-span-1"><button className="btn btn-outline px-2 py-2 text-red-600 w-full" onClick={() => delAtividade(a.id)} aria-label="Remover"><Trash2 className="h-3.5 w-3.5" /></button></div>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="mt-2 text-[11px] leading-snug text-[var(--muted)]">Com atividades preenchidas, o faturamento e os impostos passam a ser calculados por atividade{isSN ? " — no Simples o DAS do PGDAS-D prevalece como total" : " — cada uma na sua presunção"}.</p>
+                  </>
+                )}
+              </div>
+            )}
           </Section>
 
           {/* 4 · Folha & Pró-labore */}
