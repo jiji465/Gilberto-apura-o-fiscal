@@ -383,7 +383,7 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
       value: g.total, tag: diffLabel(g.diff), hl: g.diff < 0 || g.diff <= 5,
     }
   })
-  const totalRow: VItem = { kind: "tot", name: "Total a recolher", sub: `${dueGroups.length} guia${dueGroups.length !== 1 ? "s" : ""} com pagamento · ${MONTHS[calM - 1].toLowerCase()}`, value: totalRecolher }
+  const totalRow: VItem = { kind: "tot", name: "Total a recolher", sub: `${withDue.length} guia${withDue.length !== 1 ? "s" : ""} · ${dueGroups.length} vencimento${dueGroups.length !== 1 ? "s" : ""} · ${MONTHS[calM - 1].toLowerCase()}`, value: totalRecolher }
   const allV: VItem[] = [...payRows, totalRow]
 
   // paginação: 1ª página da Agenda (ao lado do calendário) leva FIRST itens; o resto vai p/ continuações
@@ -552,8 +552,13 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
                   {guiasPreview.map((t, i) => {
                     const tag = t.group === "Parcelamento" ? "PARC" : t.group === "Pendência" ? "DÉBITO" : guiaTag(t.tax)
                     const chip = "gm-chip" + (t.group === "Parcelamento" ? " parc" : t.group === "Pendência" ? " pend" : "")
-                    const per = guiasDuasColunas ? 2 : 1
-                    const cls = "gmrow" + (i >= per ? " brd" : "") + (guiasDuasColunas && i % 2 === 1 ? " colr" : "")
+                    // Em 2 colunas com total ímpar, a última guia ocupa a linha inteira p/
+                    // fechar o retângulo (grid simétrico, sem célula solta).
+                    const isFull = guiasDuasColunas && guiasPreview.length % 2 === 1 && i === guiasPreview.length - 1
+                    const cls = "gmrow"
+                      + (i >= (guiasDuasColunas ? 2 : 1) ? " brd" : "")
+                      + (guiasDuasColunas && !isFull && i % 2 === 1 ? " colr" : "")
+                      + (isFull ? " full" : "")
                     return (
                       <div className={cls} key={i}>
                         <span className={chip}>{tag}</span>
@@ -617,7 +622,7 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
           <div className="sec"><Slab>Resumo das obrigações</Slab>
             <div className="kpis">
               <Kpi k="Total a recolher" v={<RS v={totalRecolher} />} s={`em ${MONTHS[calM - 1].toLowerCase()}`} />
-              <Kpi k="Guias do mês" v={String(dueGroups.length)} s="no mês" />
+              <Kpi k="Guias do mês" v={String(withDue.length)} s={`${dueGroups.length} vencimento${dueGroups.length !== 1 ? "s" : ""}`} />
               <Kpi hl k="Próximo vencimento" v={nextDue ? <>{nextDue.day}/{nextDue.mo}</> : "—"} s={nextDue ? diffLabel(nextDue.diff) : "sem guias"} />
               {showEco
                 ? <Kpi k="Economia" v={<RS v={economiaMes} />} s={ecoLabel} />
@@ -880,6 +885,7 @@ const STYLE = `
 .gn-doc .gmrow{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:8px 15px}
 .gn-doc .gmrow.brd{border-top:1px solid var(--bd2)}
 .gn-doc .gmrow.colr{border-left:1px solid var(--bd2)}
+.gn-doc .gmrow.full{grid-column:1 / -1}
 .gn-doc .gm-chip{font:700 7.5px 'Jost';letter-spacing:.07em;text-transform:uppercase;color:#4f6b34;background:#e3ead5;padding:4px 9px;border-radius:7px;min-width:44px;text-align:center;align-self:center}
 .gn-doc .gm-chip.parc{color:#9c7a22;background:#f3e9d2}
 .gn-doc .gm-chip.pend{color:#a23a2e;background:#fbeae7}
