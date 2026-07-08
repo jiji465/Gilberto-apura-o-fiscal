@@ -349,8 +349,14 @@ export function computeApuracao(cd: ClientData, params: ParametrosFiscais = PARA
         dueDate: dueDate(cd.compMonth, cd.compYear, dueTax || tax), obs, group,
       })
     }
-    pushLP("PIS", revenue, params.pisCumulativo, revenue * (params.pisCumulativo / 100), `Regime cumulativo (${params.pisCumulativo.toFixed(2).replace(".", ",")}%)`, "PIS/COFINS")
-    pushLP("COFINS", revenue, params.cofinsCumulativo, revenue * (params.cofinsCumulativo / 100), `Regime cumulativo (${params.cofinsCumulativo.toFixed(0)}%)`, "PIS/COFINS")
+    // Base de PIS/COFINS líquida da revenda monofásica (essa parte já foi tributada na
+    // origem, alíquota zero na revenda). Vem das atividades marcadas como monofásicas
+    // no PGDAS-D — torna a projeção exata sem digitar nada a mais.
+    const recMonofasica = multiAtiv ? atividadesIn.filter((a) => a.monofasica).reduce((s, a) => s + parseBR(a.receita), 0) : 0
+    const basePisCofins = Math.max(0, revenue - recMonofasica)
+    const monoNota = recMonofasica > 0 ? ` • base líquida de monofásico (−${fmtNum(recMonofasica)})` : ""
+    pushLP("PIS", basePisCofins, params.pisCumulativo, basePisCofins * (params.pisCumulativo / 100), `Regime cumulativo (${params.pisCumulativo.toFixed(2).replace(".", ",")}%)${monoNota}`, "PIS/COFINS")
+    pushLP("COFINS", basePisCofins, params.cofinsCumulativo, basePisCofins * (params.cofinsCumulativo / 100), `Regime cumulativo (${params.cofinsCumulativo.toFixed(0)}%)${monoNota}`, "PIS/COFINS")
     if (recServ > 0 && issRate > 0)
       pushLP("ISS", recServ, issRate, (recServ * issRate) / 100, "Imposto municipal sobre serviços", "ISS", "ISS")
     const provNota = recTrim > 0 ? "provisão mensal (1/3 do trimestre)" : "provisão mensal (1/3) — informe a receita do trimestre p/ exatidão"
@@ -618,8 +624,15 @@ export function simularComparativo(cd: ClientData, ap: Apuracao, params: Paramet
   const ativComparativo = isSN ? ativDoAnexo(cd.anexo) : cd.atividade
   const ehServico = ativComparativo === "Serviços"
   // ICMS do lado Lucro Presumido (comércio/indústria): usa o ICMS real digitado se a
-  // empresa já é LP; senão ESTIMA por % efetivo sobre as vendas (líquido de créditos).
-  const icmsLP = ehServico ? 0 : (isLP && parseBR(cd.icmsRecolher) > 0 ? parseBR(cd.icmsRecolher) : ap.revenue * (parseBR(cd.icmsCompPct) / 100))
+  // empresa já é LP; senão ESTIMA por % efetivo sobre as vendas TRIBUTÁVEIS — só o
+  // comércio e fora da substituição tributária (ST já foi recolhida antes, não gera débito).
+  const ativsCmp = cd.atividades || []
+  const recComercio = ativsCmp.length
+    ? ativsCmp.filter((a) => (a.tipo || ativDoAnexo(a.anexo)) !== "Serviços").reduce((s, a) => s + parseBR(a.receita), 0)
+    : (ehServico ? 0 : ap.revenue)
+  const recST = ativsCmp.filter((a) => a.substituicaoICMS).reduce((s, a) => s + parseBR(a.receita), 0)
+  const baseICMS = Math.max(0, recComercio - recST)
+  const icmsLP = ehServico ? 0 : (isLP && parseBR(cd.icmsRecolher) > 0 ? parseBR(cd.icmsRecolher) : baseICMS * (parseBR(cd.icmsCompPct) / 100))
   const apS = isSN ? ap : computeApuracao({ ...base, regime: "Simples Nacional", anexo: cd.anexo || "Anexo III" }, params)
   const apP = isLP ? ap : computeApuracao({ ...base, regime: "Lucro Presumido", atividade: ativComparativo, icmsRecolher: fmtNum(icmsLP) }, params)
 

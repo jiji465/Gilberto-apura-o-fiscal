@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import { FileText, Calculator, Upload, Sparkles, Trash2, Download, Printer, Scale, Plus, ListPlus, ChevronDown } from "lucide-react"
-import { computeApuracao, calcEconomia, MEI_CATEGORIAS, MEI_DAS_2026 } from "@/lib/engine"
+import { computeApuracao, calcEconomia, simularComparativo, MEI_CATEGORIAS, MEI_DAS_2026 } from "@/lib/engine"
 import { fmtBRL, fmtNum, fmtCNPJ, fmtPct, maskBRL, parseBR, MONTHS } from "@/lib/format"
 import { parsePGDAS } from "@/lib/pgdas"
 import { lerTextoPGDAS, exportRelatorioPDF, safeFilename } from "@/lib/pdf"
@@ -267,6 +267,9 @@ export default function RelatorioPage() {
   }
 
   const ap = useMemo(() => computeApuracao(cd, params), [cd, params])
+  // Projeção Lucro Presumido (comparativo ao vivo) — só faz sentido p/ Simples.
+  const comp = useMemo(() => simularComparativo(cd, ap, params), [cd, ap, params])
+  const temComercio = cd.atividade !== "Serviços" || (cd.atividades || []).some((a) => a.anexo === "Anexo I" || a.anexo === "Anexo II" || a.tipo === "Comércio" || a.tipo === "Indústria")
   const isWide = useIsWide()
   // Apuração "atrasada" só para o preview/export — evita re-render do relatório a cada tecla.
   const cdView = useDebounced(cd, 250)
@@ -392,6 +395,40 @@ export default function RelatorioPage() {
               </div>
               <textarea className="input font-mono text-xs min-h-[64px]" value={pgdasText} onChange={(e) => setPgdasText(e.target.value)} placeholder="…ou cole aqui o texto do PGDAS-D" />
               <button className="btn btn-primary mt-2 text-sm" onClick={() => { if (applyPgdas(pgdasText)) setPgdasText("") }}><Sparkles className="h-4 w-4" /> Preencher</button>
+            </div>
+          )}
+
+          {/* Projeção Lucro Presumido — comparação ao vivo (só p/ Simples) */}
+          {isSN && (
+            <div className="card p-5">
+              <h2 className="font-semibold mb-1 flex items-center gap-2"><Scale className="h-4 w-4" /> Projeção Lucro Presumido</h2>
+              <p className="text-xs text-[var(--muted)] mb-3">Compara ao vivo o Simples (DAS) com o que a empresa pagaria no Lucro Presumido. Monofásico e ICMS-ST do PGDAS-D já entram; folha/pró-labore (Seção 4) e ISS (Seção 3) também.</p>
+              {comp.simulavel ? (
+                <>
+                  <div className="grid grid-cols-3 gap-3 text-center">
+                    <div className={"rounded-lg border p-3 " + (comp.melhor === "Simples Nacional" ? "border-emerald-300 bg-emerald-50/50" : "border-[var(--line)]")}>
+                      <p className="text-[10px] uppercase text-[var(--muted)] font-bold">Simples (atual)</p>
+                      <p className="text-lg font-bold text-[var(--navy)] tabular-nums">{fmtBRL(comp.totalSimples)}</p>
+                    </div>
+                    <div className={"rounded-lg border p-3 " + (comp.melhor === "Lucro Presumido" ? "border-emerald-300 bg-emerald-50/50" : "border-[var(--line)]")}>
+                      <p className="text-[10px] uppercase text-[var(--muted)] font-bold">Lucro Presumido</p>
+                      <p className="text-lg font-bold text-[var(--navy)] tabular-nums">{fmtBRL(comp.totalPresumido)}</p>
+                    </div>
+                    <div className="rounded-lg border border-[var(--gold)] bg-[#fdfaf2] p-3">
+                      <p className="text-[10px] uppercase text-[var(--gold)] font-bold">Mais econômico</p>
+                      <p className="text-sm font-bold text-[var(--navy)]">{comp.melhor}</p>
+                      <p className="text-xs text-[var(--muted)] tabular-nums">{fmtBRL(comp.economia)}/mês</p>
+                    </div>
+                  </div>
+                  {comp.estimado && <p className="mt-2 text-[11px] leading-snug text-[var(--muted)]">Comércio: ICMS estimado pela alíquota efetiva informada, líquido de ST — confirme no SPED. Os demais tributos são exatos.</p>}
+                </>
+              ) : (
+                <p className="text-sm text-[var(--muted)]">{temComercio ? <>Para projetar o comércio, informe o <b>ICMS efetivo (%)</b> abaixo.</> : "Informe o faturamento (ou importe o PGDAS-D) para ver a projeção."}</p>
+              )}
+              {temComercio && (
+                <label className="block mt-3 max-w-xs"><span className="label">ICMS efetivo (%) <span className="text-[var(--muted)] font-normal">— vendas tributáveis (fora ST)</span></span>
+                  <input className="input" value={cd.icmsCompPct ?? ""} onChange={(e) => upd("icmsCompPct", e.target.value)} placeholder="ex.: 7" /></label>
+              )}
             </div>
           )}
 
