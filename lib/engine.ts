@@ -424,8 +424,10 @@ export function computeApuracao(cd: ClientData, params: ParametrosFiscais = PARA
     if (irrf > 0)
       taxes.push({ tax: "IRRF (Folha)", base: "", rate: "", apurado: fmtNum(irrf), retido: "", value: fmtNum(irrf), dueDate: dueDate(cd.compMonth, cd.compYear, "IRRF (Folha)"), obs: "IRRF retido da folha (DARF)", group: "Folha" })
   }
-  // ICMS digitado (Lucro Presumido comércio/indústria)
-  if ((regime === "Lucro Presumido" || regime === "Lucro Real") && atividade !== "Serviços") {
+  // ICMS digitado (Lucro Presumido comércio/indústria). Também vale quando há atividade
+  // de comércio/indústria entre as atividades (empresa mista cujo anexo "principal" é III).
+  const temComercioAtiv = multiAtiv && atividadesIn.some((a) => (a.tipo || tipoDoAnexo(a.anexo)) !== "Serviços")
+  if ((regime === "Lucro Presumido" || regime === "Lucro Real") && (atividade !== "Serviços" || temComercioAtiv)) {
     const icms = parseBR(cd.icmsRecolher)
     if (icms > 0)
       taxes.push({ tax: "ICMS", base: "", rate: "", apurado: fmtNum(icms), retido: "", value: fmtNum(icms), dueDate: dueDate(cd.compMonth, cd.compYear, "ICMS"), obs: "ICMS a recolher (apuração própria)", group: "ICMS" })
@@ -631,7 +633,9 @@ export function simularComparativo(cd: ClientData, ap: Apuracao, params: Paramet
   const recComercio = ativsCmp.length
     ? ativsCmp.filter((a) => (a.tipo || ativDoAnexo(a.anexo)) !== "Serviços").reduce((s, a) => s + parseBR(a.receita), 0)
     : (ehServico ? 0 : ap.revenue)
-  const icmsLP = ehServico ? 0 : (isLP && parseBR(cd.icmsRecolher) > 0 ? parseBR(cd.icmsRecolher) : recComercio * (parseBR(cd.icmsCompPct) / 100))
+  // ICMS baseado na receita de COMÉRCIO (das atividades), não no anexo único — assim uma
+  // empresa mista (anexo "principal" III + atividade de comércio) também projeta o ICMS.
+  const icmsLP = isLP && parseBR(cd.icmsRecolher) > 0 ? parseBR(cd.icmsRecolher) : recComercio * (parseBR(cd.icmsCompPct) / 100)
   const apS = isSN ? ap : computeApuracao({ ...base, regime: "Simples Nacional", anexo: cd.anexo || "Anexo III" }, params)
   const apP = isLP ? ap : computeApuracao({ ...base, regime: "Lucro Presumido", atividade: ativComparativo, icmsRecolher: fmtNum(icmsLP) }, params)
 
@@ -649,13 +653,13 @@ export function simularComparativo(cd: ClientData, ap: Apuracao, params: Paramet
   const totalPresumido = linhas.reduce((s, l) => s + l.presumido, 0)
   // Serviços: comparativo 100% derivável (ISS conhecido). Comércio/indústria: só é
   // simulável quando há ICMS p/ o lado Presumido (real, se LP, ou estimado por %).
-  const icmsOk = ehServico || (isLP ? parseBR(cd.icmsRecolher) > 0 : parseBR(cd.icmsCompPct) > 0)
+  const icmsOk = recComercio <= 0 || (isLP ? parseBR(cd.icmsRecolher) > 0 : parseBR(cd.icmsCompPct) > 0)
   const dadosOk = isSN ? totalPresumido > 0 : parseBR(cd.rbt12) > 0 && totalSimples > 0
   const simulavel = icmsOk && dadosOk
   return {
     linhas, totalSimples, totalPresumido,
     economia: Math.abs(totalSimples - totalPresumido),
     melhor: totalSimples <= totalPresumido ? "Simples Nacional" : "Lucro Presumido",
-    atual, simulavel, estimado: !ehServico,
+    atual, simulavel, estimado: recComercio > 0 && !(isLP && parseBR(cd.icmsRecolher) > 0),
   }
 }
