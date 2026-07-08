@@ -3,8 +3,8 @@ export const ESCRITORIO = {
   nome: "Gilberto Negreiros Contabilidade",
   marca: "GILBERTO NEGREIROS",
   submarca: "Contabilidade",
-  email: "contato@gilbertonegreiros.com.br",
-  telefone: "(00) 0000-0000",
+  email: "gnsjrcont@outlook.com",
+  telefone: "(99) 98412-3064",
 }
 
 export const TETO_SIMPLES = 4_800_000
