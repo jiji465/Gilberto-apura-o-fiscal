@@ -624,15 +624,14 @@ export function simularComparativo(cd: ClientData, ap: Apuracao, params: Paramet
   const ativComparativo = isSN ? ativDoAnexo(cd.anexo) : cd.atividade
   const ehServico = ativComparativo === "Serviços"
   // ICMS do lado Lucro Presumido (comércio/indústria): usa o ICMS real digitado se a
-  // empresa já é LP; senão ESTIMA por % efetivo sobre as vendas TRIBUTÁVEIS — só o
-  // comércio e fora da substituição tributária (ST já foi recolhida antes, não gera débito).
+  // empresa já é LP; senão ESTIMA pela ALÍQUOTA EFETIVA informada sobre o faturamento do
+  // comércio. Essa % já é o resultado líquido (débito das vendas − crédito das compras)
+  // ÷ faturamento — por isso NÃO se desconta a ST de novo (a % já a considera).
   const ativsCmp = cd.atividades || []
   const recComercio = ativsCmp.length
     ? ativsCmp.filter((a) => (a.tipo || ativDoAnexo(a.anexo)) !== "Serviços").reduce((s, a) => s + parseBR(a.receita), 0)
     : (ehServico ? 0 : ap.revenue)
-  const recST = ativsCmp.filter((a) => a.substituicaoICMS).reduce((s, a) => s + parseBR(a.receita), 0)
-  const baseICMS = Math.max(0, recComercio - recST)
-  const icmsLP = ehServico ? 0 : (isLP && parseBR(cd.icmsRecolher) > 0 ? parseBR(cd.icmsRecolher) : baseICMS * (parseBR(cd.icmsCompPct) / 100))
+  const icmsLP = ehServico ? 0 : (isLP && parseBR(cd.icmsRecolher) > 0 ? parseBR(cd.icmsRecolher) : recComercio * (parseBR(cd.icmsCompPct) / 100))
   const apS = isSN ? ap : computeApuracao({ ...base, regime: "Simples Nacional", anexo: cd.anexo || "Anexo III" }, params)
   const apP = isLP ? ap : computeApuracao({ ...base, regime: "Lucro Presumido", atividade: ativComparativo, icmsRecolher: fmtNum(icmsLP) }, params)
 

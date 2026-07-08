@@ -426,8 +426,9 @@ export default function RelatorioPage() {
                 <p className="text-sm text-[var(--muted)]">{temComercio ? <>Para projetar o comércio, informe o <b>ICMS efetivo (%)</b> abaixo.</> : "Informe o faturamento (ou importe o PGDAS-D) para ver a projeção."}</p>
               )}
               {temComercio && (
-                <label className="block mt-3 max-w-xs"><span className="label">ICMS efetivo (%) <span className="text-[var(--muted)] font-normal">— vendas tributáveis (fora ST)</span></span>
-                  <input className="input" value={cd.icmsCompPct ?? ""} onChange={(e) => upd("icmsCompPct", e.target.value)} placeholder="ex.: 7" /></label>
+                <label className="block mt-3 max-w-sm"><span className="label">ICMS efetivo (%) <span className="text-[var(--muted)] font-normal">— (débito das vendas − crédito das compras) ÷ faturamento</span></span>
+                  <input className="input" value={cd.icmsCompPct ?? ""} onChange={(e) => upd("icmsCompPct", e.target.value)} placeholder="ex.: 3,5" />
+                  <span className="mt-1 block text-[11px] leading-snug text-[var(--muted)]">Aplicado sobre o faturamento do comércio. Use o líquido do SPED (já considera créditos e ST).</span></label>
               )}
             </div>
           )}

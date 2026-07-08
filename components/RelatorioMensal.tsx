@@ -135,7 +135,7 @@ function Donut({ segs, total }: { segs: Seg[]; total: number }) {
   return (
     <div className="fx ac gap16" style={{ flex: 1 }}>
       <div className="donut" style={{ background: `conic-gradient(${stops.join(",")})` }}>
-        <div className="donut-h"><b>R$ {fmtKm(total)}</b><small>TOTAL</small></div>
+        <div className="donut-h"><b><span className="dh-rs">R$</span>{fmtKm(total)}</b><small>TOTAL</small></div>
       </div>
       <div className="leg">
         {segs.map((s, i) => (
@@ -612,7 +612,7 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
                 <CmpRow name="Simples Nacional" cls="f-green" w={(comp.totalSimples / maxReg) * 100} val={fmtBRL(comp.totalSimples)} />
                 <CmpRow name="Lucro Presumido" cls="f-gold" w={(comp.totalPresumido / maxReg) * 100} val={fmtBRL(comp.totalPresumido)} />
               </div>
-              {comp.estimado && <div className="cmp-est">PIS/COFINS e ICMS já <b>excluem a parcela monofásica e a ICMS-ST</b> do PGDAS-D. {isSN ? <>O ICMS do Lucro Presumido foi <b>estimado em {fmtPct(parseBR(cd.icmsCompPct))}</b> sobre as vendas tributáveis (fora ST) — confira no SPED.</> : <>Usado o ICMS informado na apuração.</>}</div>}
+              {comp.estimado && <div className="cmp-est">PIS/COFINS já <b>excluem a parcela monofásica</b> do PGDAS-D. {isSN ? <>O ICMS do Lucro Presumido foi <b>estimado em {fmtPct(parseBR(cd.icmsCompPct))}</b> — alíquota efetiva (débito − crédito ÷ faturamento) sobre as vendas do comércio; confira no SPED.</> : <>Usado o ICMS informado na apuração.</>}</div>}
             </div>
             <div className="sec" style={{ flex: 1 }}><Slab>Detalhamento tributo a tributo</Slab>
               <CompTable comp={comp} />
@@ -845,8 +845,9 @@ const STYLE = `
 .gn-doc .g-scale{display:flex;justify-content:space-between;width:226px;font:500 8.5px var(--font-plex);color:var(--muted);margin-top:9px}
 .gn-doc .g-note{font:400 10px/1.5 var(--font-plex);color:var(--muted);margin-top:13px;text-align:center;max-width:74mm;align-self:center}
 .gn-doc .donut{width:122px;height:122px;border-radius:50%;position:relative;flex:none}
-.gn-doc .donut-h{position:absolute;inset:25px;background:var(--card);border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center}
-.gn-doc .donut-h b{font:600 18px var(--font-jost);color:var(--num);line-height:1}
+.gn-doc .donut-h{position:absolute;inset:22px;background:var(--card);border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 6px}
+.gn-doc .donut-h b{font:600 16px var(--font-jost);color:var(--num);line-height:1;white-space:nowrap}
+.gn-doc .donut-h .dh-rs{font-size:.6em;font-weight:500;color:var(--muted);margin-right:2px}
 .gn-doc .donut-h small{font:500 7.5px var(--font-jost);letter-spacing:.18em;color:var(--muted);margin-top:3px}
 .gn-doc .leg{display:flex;flex-direction:column;gap:11px;flex:1}
 .gn-doc .leg-i{display:flex;align-items:center;gap:10px;font:400 11px var(--font-plex);color:#334023}
