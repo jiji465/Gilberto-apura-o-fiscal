@@ -612,7 +612,7 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
                 <CmpRow name="Simples Nacional" cls="f-green" w={(comp.totalSimples / maxReg) * 100} val={fmtBRL(comp.totalSimples)} />
                 <CmpRow name="Lucro Presumido" cls="f-gold" w={(comp.totalPresumido / maxReg) * 100} val={fmtBRL(comp.totalPresumido)} />
               </div>
-              {comp.estimado && <div className="cmp-est">Comparativo <b>aproximado</b>: em comércio/indústria o ICMS depende dos créditos de entrada e da substituição tributária. {isSN ? <>O ICMS do Lucro Presumido foi <b>estimado em {fmtPct(parseBR(cd.icmsCompPct))}</b> sobre as vendas.</> : <>Usado o ICMS informado na apuração.</>}</div>}
+              {comp.estimado && <div className="cmp-est">PIS/COFINS e ICMS já <b>excluem a parcela monofásica e a ICMS-ST</b> do PGDAS-D. {isSN ? <>O ICMS do Lucro Presumido foi <b>estimado em {fmtPct(parseBR(cd.icmsCompPct))}</b> sobre as vendas tributáveis (fora ST) — confira no SPED.</> : <>Usado o ICMS informado na apuração.</>}</div>}
             </div>
             <div className="sec" style={{ flex: 1 }}><Slab>Detalhamento tributo a tributo</Slab>
               <CompTable comp={comp} />
