@@ -23,12 +23,6 @@ pnpm dev            # http://localhost:3000
 
 Build de produção: `pnpm build && pnpm start`. Verificação de tipos: `pnpm typecheck`.
 
-## Envio por e-mail (opcional)
-
-Copie `.env.local.example` para `.env.local` e preencha `RESEND_API_KEY` e `REPORT_FROM_EMAIL`
-(conta gratuita em https://resend.com). **Sem** essas variáveis, o botão "Enviar ao cliente"
-apenas **baixa o PDF** para você anexar manualmente — o resto do sistema funciona normalmente.
-
 ## Dados
 
 Os dados (clientes e competências) ficam no **navegador** (`localStorage`) — zero configuração,

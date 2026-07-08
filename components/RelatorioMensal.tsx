@@ -279,10 +279,11 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
   const compSegs: Seg[] = capSegs((() => {
     // MEI tem uma única guia (DAS-MEI); manter a abertura informativa não duplica.
     if (ap.mei) return ap.mei.repart.map((r) => ({ label: r.tax, value: r.value })).filter((s) => s.value > 0)
-    // Simples, Lucro Presumido e Lucro Real: uma fatia por guia apurada no mês,
-    // sem guias manuais (parcelamentos, débitos antigos, taxas).
+    // Simples, Lucro Presumido e Lucro Real: uma fatia por guia que conta na
+    // competência (guias do motor + manuais que o usuário incluiu). Parcelamentos e
+    // pendências de meses anteriores ficam de fora — batem com o KPI "Impostos".
     return ap.taxes
-      .filter((t) => !t.manual && parseBR(t.value) > 0)
+      .filter((t) => t.contaCompetencia && parseBR(t.value) > 0)
       .map((t) => ({ label: t.tax, value: parseBR(t.value) }))
       .sort((a, b) => b.value - a.value)
   })())
@@ -295,6 +296,8 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
   // Pendências (débitos em aberto) — informativas, NÃO entram no total/carga.
   const pendencias = cd.pendencias || []
   const pendTotal = pendencias.reduce((s, p) => s + parseBR(p.valor || "0"), 0)
+  // Pendências que viraram guia neste mês (entram no Total a recolher).
+  const pendComGuia = pendencias.filter((p) => p.emitiuGuia && parseBR(p.valor || "0") > 0).length
 
   // Comparativo de regimes (informativo — total que pagaria em cada regime).
   // Memoizado: simularComparativo chama computeApuracao 1–2× extra; só recalcula quando muda cd/ap/params.
@@ -443,6 +446,64 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
     { k: isSN ? "Anexo" : "Atividade", v: anexoFaixa },
   ]
 
+  // Lista "Guias a recolher no mês" (rodapé da pág. 1): tudo que sai do caixa no mês
+  // (motor + manuais + parcelamentos + pendências com guia). 1 coluna até 6 guias;
+  // acima, 2 colunas p/ caber mais sem estourar o A4. O excedente vai p/ a Agenda
+  // Fiscal (que pagina). Documenta o que o cliente tem a recolher.
+  const GUIAS_1COL = 6
+  const GUIAS_2COL = 14
+  const guiasDuasColunas = taxesPos.length > GUIAS_1COL
+  const guiasCap = guiasDuasColunas ? GUIAS_2COL : GUIAS_1COL
+  const guiasPreview = taxesPos.slice(0, guiasCap)
+  const guiasResto = taxesPos.length - guiasPreview.length
+
+  // ---------- COMPETÊNCIA SEM MOVIMENTO ----------
+  // Sem faturamento e sem nenhuma guia a recolher (empresa parada no mês). Em vez das
+  // páginas do relatório (medidor/composição/agenda vazios), gera UMA página enxuta:
+  // declaração de que não houve apuração e as obrigações acessórias estão em dia.
+  const semMovimento = ap.revenue <= 0 && taxesPos.length === 0
+  if (semMovimento) {
+    const nome = cd.clientName || "—"
+    const ehServico = ap.atividade === "Serviços"
+    const isSimei = ap.regime === "Simples Nacional" || ap.regime === "MEI"
+    const semMovCols = [
+      { k: "Cliente", v: nome },
+      { k: "CNPJ", v: cd.cnpj || "—" },
+      { k: "Regime", v: ap.regime + (isSN ? ` · ${ap.sn!.anexoEf}` : "") },
+      { k: "Competência", v: compPretty },
+    ]
+    return (
+      <div className="gn-doc" id="rep-overlay">
+        <style dangerouslySetInnerHTML={{ __html: STYLE }} />
+        <section className="page sheet">
+          <Header title="Competência sem Movimento" comp={<>Competência <b>{compPretty}</b></>} />
+          <div className="main"><div className="stack">
+            <ClientBar cols={semMovCols} />
+            <div className="sec"><Slab>Situação da competência</Slab>
+              <div className="kpis" style={{ gridTemplateColumns: "repeat(3,1fr)" }}>
+                <Kpi k="Faturamento" v={<RS v={0} />} s="sem receita no mês" />
+                <Kpi k="Impostos a recolher" v={<RS v={0} />} s="nada a recolher" />
+                <Kpi hl k="Situação" v="Sem movimento" s="acessórias em dia" />
+              </div>
+            </div>
+            <div className="sec" style={{ flex: 1 }}><Slab>Parecer da competência</Slab>
+              <div className="exsum">
+                <p>Na competência <b>{compPretty}</b>, a empresa <b>{nome}</b> ({ap.regime}{isSN ? `, ${ap.sn!.anexoEf}` : ""}) não registrou faturamento{ehServico ? " referente à prestação de serviços" : ""}, não havendo, portanto, imposto{isSimei ? " (DAS)" : ""} a recolher no período.</p>
+                <p>{isSimei
+                  ? <>As obrigações acessórias foram devidamente transmitidas ao Fisco dentro do prazo legal, conforme a <b>Resolução CGSN nº 140/2018</b>.</>
+                  : <>As obrigações acessórias do período foram cumpridas dentro do prazo legal estabelecido pela legislação vigente.</>}</p>
+                {obsChunks.length > 0 && <p style={{ whiteSpace: "pre-wrap" }}>{cd.observacoes!.trim()}</p>}
+                <p className="exsum-sign">{ESCRITORIO.nome}</p>
+              </div>
+            </div>
+          </div>
+            <Footer note="Documento gerado eletronicamente · Pág. 1 de 1" />
+          </div>
+        </section>
+      </div>
+    )
+  }
+
   return (
     <div className="gn-doc" id="rep-overlay">
       <style dangerouslySetInnerHTML={{ __html: STYLE }} />
@@ -482,6 +543,32 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
           {showEco && (
             <div className="sec"><Slab>Economia tributária gerada</Slab>
               <GoldEconomia economiaMes={economiaMes} sub={temAcumulado ? `${fmtBRL(economiaAno)} acumulado no ano` : undefined} note={economiaNote} />
+            </div>
+          )}
+          {guiasPreview.length > 0 && (
+            <div className="sec"><Slab>Guias a recolher no mês</Slab>
+              <div className="gmwrap">
+                <div className={"gmgrid" + (guiasDuasColunas ? " two" : "")}>
+                  {guiasPreview.map((t, i) => {
+                    const tag = t.group === "Parcelamento" ? "PARC" : t.group === "Pendência" ? "DÉBITO" : guiaTag(t.tax)
+                    const chip = "gm-chip" + (t.group === "Parcelamento" ? " parc" : t.group === "Pendência" ? " pend" : "")
+                    const per = guiasDuasColunas ? 2 : 1
+                    const cls = "gmrow" + (i >= per ? " brd" : "") + (guiasDuasColunas && i % 2 === 1 ? " colr" : "")
+                    return (
+                      <div className={cls} key={i}>
+                        <span className={chip}>{tag}</span>
+                        <div className="gm-main">
+                          <div className="gm-tax">{t.tax}{t.parcela ? <span className="gm-pc"> · parc. {t.parcela}</span> : null}</div>
+                          <div className="gm-sub">vence {t.dueDate || "—"}</div>
+                        </div>
+                        <div className="gm-val num">{fmtBRL(parseBR(t.value))}</div>
+                      </div>
+                    )
+                  })}
+                </div>
+                {guiasResto > 0 && <div className="gm-more">…e mais {guiasResto} guia{guiasResto > 1 ? "s" : ""} — detalhadas na Agenda Fiscal</div>}
+                <div className="gm-totrow"><span className="l">Total a recolher</span><span className="v">{fmtBRL(totalRecolher)}</span></div>
+              </div>
             </div>
           )}
         </div>
@@ -572,7 +659,7 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
               <div className="pend-hero">
                 <div>
                   <div className="pend-hero-k">Total de débitos em aberto</div>
-                  <div className="pend-hero-sub">{pendencias.length} débito{pendencias.length !== 1 ? "s" : ""} · informativo — não compõem o total a recolher do mês</div>
+                  <div className="pend-hero-sub">{pendencias.length} débito{pendencias.length !== 1 ? "s" : ""}{pendComGuia > 0 ? ` · ${pendComGuia} com guia emitida (no total do mês)` : " · informativo — não compõem o total do mês"}</div>
                 </div>
                 <div className="pend-hero-v"><span className="rs">R$</span>{fmtK(pendTotal)}</div>
               </div>
@@ -582,7 +669,7 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
                 <div className="ptbl-h"><span>Descrição</span><span>Competência</span><span>Situação</span><span className="r">Valor</span></div>
                 {chunk.map((p, i) => (
                   <div className="ptbl-r" key={i}>
-                    <span className="ptbl-d">{p.descricao}</span>
+                    <span className="ptbl-d">{p.descricao}{p.emitiuGuia && <span className="ptbl-g">guia emitida</span>}</span>
                     <span>{p.competencia || "—"}</span>
                     <span className="ptbl-s">{p.situacao || "—"}</span>
                     <span className="r">{p.valor ? fmtBRL(parseBR(p.valor)) : "—"}</span>
@@ -627,7 +714,7 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
               {/* 9 · Parcelamentos */}
               {parcelasNum > 0 && <p>À parte da carga do mês, há <b>{parcelasNum} parcelamento{parcelasNum !== 1 ? "s" : ""}</b> totalizando <b>{fmtBRL(parcelasTot)}</b>, referentes a desembolsos de competências anteriores. Esses valores integram o total a recolher, mas não compõem a carga tributária efetiva da competência.</p>}
               {/* 10 · Pendências */}
-              {showPend && <p>A empresa possui <b>{pendencias.length} débito{pendencias.length !== 1 ? "s" : ""} em aberto</b> totalizando <b>{fmtBRL(pendTotal)}</b> (detalhados na página "Débitos em Aberto"). Recomenda-se a regularização para evitar restrições (CND, dívida ativa).</p>}
+              {showPend && <p>A empresa possui <b>{pendencias.length} débito{pendencias.length !== 1 ? "s" : ""} em aberto</b> totalizando <b>{fmtBRL(pendTotal)}</b> (detalhados na página "Débitos em Aberto"){pendComGuia > 0 ? <>, {pendComGuia === pendencias.length ? "todos" : <><b>{pendComGuia}</b> deles</>} com guia emitida e incluída no total a recolher deste mês</> : null}. Recomenda-se a regularização{pendComGuia > 0 && pendComGuia < pendencias.length ? " dos demais" : ""} para evitar restrições (CND, dívida ativa).</p>}
               {/* 11 · Comparativo de regimes */}
               {comp.simulavel && <p>No comparativo de regimes para o mesmo faturamento, o <b>{comp.melhor}</b> apresenta a menor carga total ({fmtBRL(comp.totalSimples)} no Simples Nacional × {fmtBRL(comp.totalPresumido)} no Lucro Presumido). {comp.melhor === comp.atual ? `O regime atual já é o mais econômico, com vantagem de ${fmtBRL(comp.economia)}/mês.` : `A adoção do ${comp.melhor} reduziria a carga em ${fmtBRL(comp.economia)}/mês (recomenda-se estudo de enquadramento).`}</p>}
               {/* 12 · Assinatura */}
@@ -787,6 +874,24 @@ const STYLE = `
 .gn-doc .vrow.tot .vd small,.gn-doc .vrow.tot .vsub{color:#b9c0a3}
 .gn-doc .venc{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
 .gn-doc .obsbox{background:var(--card);border:1px solid var(--bd);border-radius:13px;padding:15px 17px;font:400 11px/1.65 'IBM Plex Sans';color:#3a4530;white-space:pre-wrap}
+.gn-doc .gmwrap{border:1px solid var(--bd);border-radius:13px;overflow:hidden;background:var(--card)}
+.gn-doc .gmgrid{display:flex;flex-direction:column}
+.gn-doc .gmgrid.two{display:grid;grid-template-columns:1fr 1fr}
+.gn-doc .gmrow{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:8px 15px}
+.gn-doc .gmrow.brd{border-top:1px solid var(--bd2)}
+.gn-doc .gmrow.colr{border-left:1px solid var(--bd2)}
+.gn-doc .gm-chip{font:700 7.5px 'Jost';letter-spacing:.07em;text-transform:uppercase;color:#4f6b34;background:#e3ead5;padding:4px 9px;border-radius:7px;min-width:44px;text-align:center;align-self:center}
+.gn-doc .gm-chip.parc{color:#9c7a22;background:#f3e9d2}
+.gn-doc .gm-chip.pend{color:#a23a2e;background:#fbeae7}
+.gn-doc .gm-main{min-width:0}
+.gn-doc .gm-tax{font:500 11px 'IBM Plex Sans';color:#334023;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gn-doc .gm-pc{font-weight:400;color:var(--muted)}
+.gn-doc .gm-sub{font:400 8.5px 'IBM Plex Sans';color:var(--muted);margin-top:2px}
+.gn-doc .gm-val{font:700 12px 'Jost';color:var(--num);text-align:right;font-variant-numeric:tabular-nums}
+.gn-doc .gm-more{padding:7px 16px;border-top:1px solid var(--bd2);background:#faf8f1;color:var(--muted);font:400 9px 'IBM Plex Sans';text-align:center}
+.gn-doc .gm-totrow{display:flex;justify-content:space-between;align-items:center;padding:11px 18px;background:var(--green-dk)}
+.gn-doc .gm-totrow .l{font:600 9px 'Jost';letter-spacing:.16em;text-transform:uppercase;color:#c9a85a}
+.gn-doc .gm-totrow .v{font:700 16px 'Jost';color:#f5f1e6;font-variant-numeric:tabular-nums}
 .gn-doc .rings{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
 .gn-doc .ringc{background:var(--card);border:1px solid var(--bd);border-radius:13px;padding:15px 12px;display:flex;flex-direction:column;align-items:center;text-align:center}
 .gn-doc .ring{width:96px;height:96px;border-radius:50%;position:relative}
@@ -824,6 +929,7 @@ const STYLE = `
 .gn-doc .ptbl .r{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
 .gn-doc .ptbl-d{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .gn-doc .ptbl-s{color:#a23a2e;text-transform:capitalize;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gn-doc .ptbl-g{display:inline-block;margin-left:8px;padding:1px 7px;border-radius:20px;background:#e3ead5;color:#4f6b34;font:600 7px 'Jost';letter-spacing:.08em;text-transform:uppercase;vertical-align:middle}
 .gn-doc .foot{margin-top:auto;display:flex;justify-content:space-between;align-items:center;padding-top:5mm;border-top:1px solid var(--bd)}
 .gn-doc .foot-l{display:flex;align-items:center;gap:9px}
 .gn-doc .fnm{font:600 9.5px 'IBM Plex Sans';color:#334023}
