@@ -84,15 +84,16 @@ export function parsePGDAS(raw: string): PgdasResult | null {
   const cnpj = text.match(/(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})/)
   if (cnpj) f.cnpj = cnpj[1]
 
-  let m = text.match(/Nome\s+[eE]mpresarial[:\s]*([^\n]+)/i)
+  // Nome empresarial (2 passos p/ previsibilidade): pega uma janela após o rótulo
+  // (cruzando quebra de linha — o nome pode vir em 2 linhas) e corta no PRIMEIRO campo
+  // vizinho (CNPJ, Data de Abertura, etc.) ou no número do CNPJ. Não corta em espaços
+  // internos: a extração do PDF gera gaps dentro da razão social (o que truncava "JAB").
+  let m = text.match(/Nome\s+[eE]mpresarial\s*[:\-]?\s*([\s\S]{0,120})/i)
   if (m) {
-    // Corta o valor no primeiro rótulo de campo vizinho (CNPJ, Data de Abertura, etc.)
-    // ou num vão de coluna real (3+ espaços). NÃO corta em 2 espaços: a extração do
-    // PDF insere espaço duplo DENTRO da razão social, o que truncava o nome.
-    f.clientName = m[1]
-      .split(/\s{3,}|\s+CNPJ\b|\s+CPF\b|\s+Data\s+de\s+[aA]bertura|\s+Optante\b|\s+Regime\s+de\b|\s+Situa[çc][ãa]o|\s+Per[ií]odo\s+de/i)[0]
-      .replace(/\s+/g, " ")
-      .trim()
+    let nome = m[1]
+    const stop = nome.match(/\s*(?:CNPJ|CPF\b|Data\s+de\s+[aA]bertura|Optante\b|Regime\s+de\b|Situa[çc][ãa]o\b|Per[ií]odo\s+de|Ente\s+Federado|Qualifica[çc][ãa]o|Nome\s+Fantasia|\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})/i)
+    if (stop && stop.index !== undefined && stop.index > 0) nome = nome.slice(0, stop.index)
+    f.clientName = nome.replace(/\s+/g, " ").trim()
   }
 
   m = text.match(/(\d{2})\/(\d{2})\/(\d{4})\s*a\s*\d{2}\/\d{2}\/\d{4}/)
