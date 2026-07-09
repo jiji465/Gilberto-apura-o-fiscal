@@ -42,5 +42,35 @@ export const maskBRL = (raw: unknown): string => {
   return (parseInt(digits, 10) / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+/** Enxuga a descrição da atividade do PGDAS-D (que é longa e cheia de jargão) num
+ *  rótulo curto e claro para o dono da empresa. A segregação (ST/monofásico) já é
+ *  sinalizada por selos no relatório, então o rótulo fica só com a atividade-base;
+ *  para serviços mantém a distinção de ISS (que diferencia linhas). Idempotente:
+ *  rótulos manuais/curtos passam intactos (só corta o excesso e o texto entre "-"). */
+export const atividadeCurta = (desc: unknown): string => {
+  const d = String(desc || "").replace(/\s+/g, " ").trim()
+  if (!d) return d
+  const low = d.toLowerCase()
+  const tail = d.split(/\s[-–]\s/).slice(1).join(" ").toLowerCase()
+  let base: string
+  if (/revenda de mercadorias/.test(low)) base = "Revenda de mercadorias"
+  else if (/venda de mercadorias industrializ/.test(low)) base = "Venda de industrializados"
+  else if (/loca[çc][ãa]o de bens m[óo]veis/.test(low)) base = "Locação de bens móveis"
+  else if (/presta[çc][ãa]o de servi[çc]os?/.test(low)) base = "Prestação de serviços"
+  else if (/transporte\b/.test(low)) base = "Transporte"
+  else {
+    // não reconhecida (ou já curta / digitada à mão): usa só o trecho antes do " - "
+    const cut = d.split(/\s[-–]\s/)[0].trim()
+    return cut.length > 44 ? cut.slice(0, 42).replace(/[,;]\s*$/, "").trim() + "…" : cut
+  }
+  let suf = ""
+  if (base === "Prestação de serviços") {
+    if (/iss devido a outro munic[íi]pio/.test(tail)) suf = " (ISS a outro município)"
+    // só "COM retenção/substituição de ISS" é retido; "sem retenção..." é normal.
+    else if (/^com\b/.test(tail) && /(reten[çc][ãa]o|substitui[çc][ãa]o)[^.]*iss/.test(tail)) suf = " (ISS retido)"
+  }
+  return base + suf
+}
+
 export const MONTHS = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
 export const MONTHS_SHORT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]

@@ -7,7 +7,7 @@
 //     (flags "Substituição tributária de:" / "Tributação monofásica de:").
 //   • Fator r tratando "Não se aplica" e conferindo com folha12m / RBT12.
 //   • warnings[] avisando divergências (soma ≠ DAS, Fator R divergente).
-import { parseBR, fmtNum } from "./format"
+import { parseBR, fmtNum, atividadeCurta } from "./format"
 
 export interface PgdasAtividade {
   descricao: string
@@ -187,7 +187,9 @@ export function parsePGDAS(raw: string): PgdasResult | null {
     // Serviço: se o extrato já indicou Anexo IV ou V (Fator R), respeita; senão III.
     const anexoServ = f.anexo === "Anexo IV" || f.anexo === "Anexo V" ? f.anexo : "Anexo III"
     const anexo = parseBR(rp.repart.ISS) > 0 ? anexoServ : parseBR(rp.repart.IPI) > 0 ? "Anexo II" : parseBR(rp.repart.ICMS) > 0 ? "Anexo I" : undefined
-    atividades.push({ descricao, receita: receitaBruta, repart: rp.repart, total: rp.total, substituicaoICMS: subST, monofasica: mono, anexo, receitaMonofasica, receitaST })
+    // Guarda o rótulo ENXUTO (o texto do PGDAS-D é longo e cheio de jargão); a
+    // descrição completa já foi usada acima p/ detectar ST/monofásico.
+    atividades.push({ descricao: atividadeCurta(descricao), receita: receitaBruta, repart: rp.repart, total: rp.total, substituicaoICMS: subST, monofasica: mono, anexo, receitaMonofasica, receitaST })
   }
 
   if (!official) {
