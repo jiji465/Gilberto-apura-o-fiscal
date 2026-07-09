@@ -326,7 +326,7 @@ export default function RelatorioPage() {
     // que NÃO vem no PGDAS-D (o ICMS do DAS é o do Simples). Avisa onde informar.
     const ativImp = (f.atividade as string) || (f.anexo === "Anexo I" ? "Comércio" : f.anexo === "Anexo II" ? "Indústria" : "Serviços")
     if (ativImp !== "Serviços" && !parseBR(cd.icmsCompPct)) {
-      toastWarning("Para comparar com o Lucro Presumido, informe o ICMS efetivo (%) em “Faturamento” (Seção 3). O ICMS não vem no PGDAS-D.")
+      toastWarning("Para comparar com o Lucro Presumido, informe o ICMS efetivo (%) no painel “Projeção Lucro Presumido”. O ICMS não vem no PGDAS-D.")
     }
     return true
   }
@@ -535,7 +535,7 @@ export default function RelatorioPage() {
                 <label className="block"><span className="label">Alíquota ISS (%){isSN ? " — p/ comparativo" : ""}</span>
                   <input className="input" value={cd.issRate ?? ""} onChange={(e) => upd("issRate", e.target.value)} placeholder={String(params.issPadrao).replace(".", ",")} /></label>
               )}
-              {!isMEI && cd.atividade !== "Serviços" && (
+              {!isMEI && !isSN && cd.atividade !== "Serviços" && (
                 <label className="block"><span className="label">ICMS efetivo (%) <span className="text-[var(--muted)] font-normal">— p/ comparativo</span></span>
                   <input className="input" value={cd.icmsCompPct ?? ""} onChange={(e) => upd("icmsCompPct", e.target.value)} placeholder="ex.: 7" />
                   <span className="mt-1 block text-[11px] leading-snug text-[var(--muted)]">ICMS sobre vendas, líquido dos créditos de entrada — estima o Lucro Presumido no comparativo.</span></label>
