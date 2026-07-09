@@ -494,6 +494,13 @@ export function computeApuracao(cd: ClientData, params: ParametrosFiscais = PARA
     t.contaCompetencia = o?.conta !== undefined ? o.conta : true
   })
 
+  // ---------- GUIAS DO MOTOR APAGADAS (overrides[tax].off) ----------
+  // O usuário pode remover uma guia gerada pelo motor; ela some da lista e dos totais.
+  // O botão "Recalcular" (que limpa os overrides) traz todas de volta.
+  for (let i = taxes.length - 1; i >= 0; i--) {
+    if (!taxes[i].manual && ov[taxes[i].tax]?.off) taxes.splice(i, 1)
+  }
+
   // ---------- TOTAIS ----------
   // Total a recolher (caixa do mês): todas as guias, inclusive manuais
   // (parcelamentos, débitos de meses anteriores e taxas avulsas).
