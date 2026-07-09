@@ -160,6 +160,39 @@ function CmpRow({ name, cls, w, val }: { name: string; cls: string; w: number; v
   )
 }
 
+// Quadro "Base de cálculo da projeção": mostra, de forma transparente, que a revenda
+// monofásica sai da base de PIS/COFINS e as vendas em ST saem da base de ICMS — as duas
+// receitas já tributadas na origem que a projeção do Lucro Presumido exclui.
+function BaseCalcCard({ bc }: { bc: ReturnType<typeof simularComparativo>["baseCalc"] }) {
+  const temMono = bc.recMonofasica > 0.005
+  const temST = bc.recST > 0.005
+  if (!temMono && !temST) return null // nada segregado → sem exclusão a mostrar
+  const showICMS = bc.comercio && temST
+  return (
+    <>
+      <div className={"bcx" + (showICMS && temMono ? "" : " one")}>
+        {temMono && (
+          <div className="bcx-col">
+            <div className="bcx-tag">PIS / COFINS</div>
+            <div className="bcx-r"><span>Receita bruta</span><span className="num">{fmtBRL(bc.receita)}</span></div>
+            <div className="bcx-r sub"><span>(−) Revenda monofásica</span><span className="num">−{fmtBRL(bc.recMonofasica)}</span></div>
+            <div className="bcx-r base"><span>Base de cálculo</span><span className="num">{fmtBRL(bc.basePisCofins)}</span></div>
+          </div>
+        )}
+        {showICMS && (
+          <div className="bcx-col">
+            <div className="bcx-tag icms">ICMS</div>
+            <div className="bcx-r"><span>Receita de comércio</span><span className="num">{fmtBRL(bc.receitaComercio)}</span></div>
+            <div className="bcx-r sub"><span>(−) Vendas em ST</span><span className="num">−{fmtBRL(bc.recST)}</span></div>
+            <div className="bcx-r base"><span>Base de cálculo</span><span className="num">{fmtBRL(bc.baseICMS)}</span></div>
+          </div>
+        )}
+      </div>
+      <div className="bcx-cap">Produtos <b>monofásicos</b> (PIS/COFINS) e em <b>substituição tributária</b> (ICMS) já foram tributados na origem — por isso saem da base da projeção do Lucro Presumido. O <b>IRPJ e a CSLL</b> presumem sobre a <b>receita bruta total</b>, sem essa exclusão.</div>
+    </>
+  )
+}
+
 function CompTable({ comp }: { comp: ReturnType<typeof simularComparativo> }) {
   if (!comp.simulavel) return <div className="g-note" style={{ maxWidth: "none" }}>Informe RBT12 e o anexo para comparar com o Simples Nacional.</div>
   const cell = (v: number) => (v > 0.005 ? fmtBRL(v) : "—")
@@ -618,8 +651,13 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
                 <CmpRow name="Simples Nacional" cls="f-green" w={(comp.totalSimples / maxReg) * 100} val={fmtBRL(comp.totalSimples)} />
                 <CmpRow name="Lucro Presumido" cls="f-gold" w={(comp.totalPresumido / maxReg) * 100} val={fmtBRL(comp.totalPresumido)} />
               </div>
-              {comp.estimado && <div className="cmp-est">PIS/COFINS excluem a <b>parcela monofásica</b> e o ICMS exclui a <b>parte em ST</b> (do PGDAS-D). {isSN ? <>O ICMS do Lucro Presumido foi <b>estimado em {fmtPct(parseBR(cd.icmsCompPct))}</b> sobre as vendas tributáveis — projeção; o ICMS real só se apura já no Lucro Presumido.</> : <>Usado o ICMS informado na apuração.</>}</div>}
+              {comp.estimado && <div className="cmp-est">O ICMS do Lucro Presumido foi {isSN ? <>estimado em <b>{fmtPct(parseBR(cd.icmsCompPct))}</b> sobre as vendas tributáveis — projeção; o ICMS real só se apura já no Lucro Presumido.</> : <>o <b>ICMS informado</b> na apuração.</>}</div>}
             </div>
+            {(comp.baseCalc.recMonofasica > 0.005 || comp.baseCalc.recST > 0.005) && (
+              <div className="sec"><Slab>Base de cálculo da projeção</Slab>
+                <BaseCalcCard bc={comp.baseCalc} />
+              </div>
+            )}
             <div className="sec" style={{ flex: 1 }}><Slab>Detalhamento tributo a tributo</Slab>
               <CompTable comp={comp} />
             </div>
@@ -871,6 +909,19 @@ const STYLE = `
 .gn-doc .cmp{flex:1;display:flex;flex-direction:column;gap:11px}
 .gn-doc .cmp-est{margin-top:11px;background:#fbf6ea;border:1px solid #e6d6a8;border-radius:9px;padding:9px 13px;font:400 9.5px/1.5 var(--font-plex);color:#7a5e1f}
 .gn-doc .cmp-est b{font-weight:600;color:#6a4e12}
+.gn-doc .bcx{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+.gn-doc .bcx.one{grid-template-columns:1fr;max-width:52%}
+.gn-doc .bcx-col{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px 17px;display:flex;flex-direction:column;gap:9px}
+.gn-doc .bcx-tag{align-self:flex-start;font:600 8px var(--font-jost);letter-spacing:.14em;text-transform:uppercase;color:var(--gold);background:#fbf6ea;border:1px solid #e6d6a8;border-radius:6px;padding:3px 9px;margin-bottom:2px}
+.gn-doc .bcx-tag.icms{color:#4f6b34;background:#eef2e6;border-color:#cddab8}
+.gn-doc .bcx-r{display:flex;justify-content:space-between;align-items:baseline;gap:12px;font:400 10.5px var(--font-plex);color:#334023}
+.gn-doc .bcx-r .num{font-variant-numeric:tabular-nums}
+.gn-doc .bcx-r.sub{color:#a8632f}
+.gn-doc .bcx-r.sub .num{color:#a8632f;font-weight:500}
+.gn-doc .bcx-r.base{border-top:1.5px solid var(--bd);padding-top:9px;margin-top:1px;font:700 12.5px var(--font-jost);color:var(--num)}
+.gn-doc .bcx-r.base .num{color:var(--num)}
+.gn-doc .bcx-cap{margin-top:11px;font:400 9.5px/1.55 var(--font-plex);color:var(--muted)}
+.gn-doc .bcx-cap b{color:#6a4e12;font-weight:600}
 .gn-doc .cmp-row{display:grid;grid-template-columns:118px 1fr 82px;align-items:center;gap:13px}
 .gn-doc .cmp-name{font:400 10.5px var(--font-plex);color:#334023}
 .gn-doc .cmp-track{height:13px;background:#ece7d6;border-radius:7px;overflow:hidden}
