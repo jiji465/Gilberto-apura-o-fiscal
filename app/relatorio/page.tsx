@@ -289,7 +289,7 @@ export default function RelatorioPage() {
     // Múltiplas atividades: popula a tabela por atividade (senão limpa → atividade única).
     const multiAtiv = (res.atividades?.length || 0) > 1
     const novasAtiv: AtividadeLinha[] | undefined = multiAtiv
-      ? res.atividades.map((a) => ({ id: uid(), descricao: a.descricao || "", receita: a.receita || "", anexo: (a.anexo as Anexo) || undefined, dasAtividade: a.total || "", substituicaoICMS: a.substituicaoICMS, monofasica: a.monofasica }))
+      ? res.atividades.map((a) => ({ id: uid(), descricao: a.descricao || "", receita: a.receita || "", anexo: (a.anexo as Anexo) || undefined, dasAtividade: a.total || "", substituicaoICMS: a.substituicaoICMS, monofasica: a.monofasica, receitaMonofasica: a.receitaMonofasica }))
       : undefined
     setCd((p) => ({
       ...p,
