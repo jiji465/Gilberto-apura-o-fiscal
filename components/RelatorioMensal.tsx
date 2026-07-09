@@ -680,7 +680,7 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
           <div className="main"><div className="stack">
             <ClientBar cols={[clientCols[0], clientCols[1], clientCols[2], { k: "Atividades", v: String(ativs.length) }]} />
             <div className="sec" style={{ flex: 1 }}><Slab>Composição da receita</Slab>
-              <div className="fx col" style={{ flex: 1, justifyContent: "center", gap: 15 }}>
+              <div className="fx col" style={{ flex: 1, justifyContent: "center", gap: 18 }}>
                 {/* barra 100% empilhada */}
                 <div className="rbar">
                   {ativs.map((a, i) => {
@@ -1021,10 +1021,10 @@ const STYLE = `
 .gn-doc .atbl-share i{display:block;height:100%;background:var(--gold-grad);border-radius:3px}
 .gn-doc .atbl-foot{margin-top:12px;font:400 9.5px/1.5 var(--font-plex);color:var(--muted)}
 .gn-doc .atbl-foot b{color:#6a4e12;font-weight:600}
-.gn-doc .rbar{display:flex;height:32px;border-radius:9px;overflow:hidden;border:1px solid var(--bd);background:var(--card)}
+.gn-doc .rbar{display:flex;height:22px;border-radius:7px;overflow:hidden;border:1px solid var(--bd);background:var(--card)}
 .gn-doc .rbar-seg{display:flex;align-items:center;justify-content:center;min-width:2px;color:#fff;font:700 10px var(--font-jost);text-shadow:0 1px 1.5px rgba(0,0,0,.22);box-shadow:inset -1px 0 0 rgba(255,255,255,.35)}
 .gn-doc .alist{display:flex;flex-direction:column;border:1px solid var(--bd);border-radius:12px;overflow:hidden;background:var(--card)}
-.gn-doc .ait{display:flex;align-items:center;gap:13px;padding:12px 16px;border-top:1px solid var(--bd2)}
+.gn-doc .ait{display:flex;align-items:center;gap:13px;padding:10px 15px;border-top:1px solid var(--bd2)}
 .gn-doc .ait:first-child{border-top:none}
 .gn-doc .ait-dot{width:12px;height:12px;border-radius:4px;flex:none}
 .gn-doc .ait-x{flex:1;min-width:0}
