@@ -266,7 +266,7 @@ export interface RelatorioMensalProps { cd: ClientData; ap: Apuracao; evolution:
 
 export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO }: RelatorioMensalProps) {
   const isSN = !!ap.sn
-  const monthName = cd.compMonth ? MONTHS[parseInt(cd.compMonth) - 1] : ""
+  const monthName = (cd.compMonth ? MONTHS[parseInt(cd.compMonth) - 1] : "") || ""
   const compPretty = monthName ? `${monthName} / ${cd.compYear}` : cd.competenceShort || "—"
   const curMonth = cd.compMonth ? parseInt(cd.compMonth) : 0
   const curYear = cd.compYear || String(new Date().getFullYear())
@@ -349,13 +349,19 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
   const folgaSimples = Math.max(0, (TETO_SIMPLES - fatAcum12m) / TETO_SIMPLES) * 100
   const ticket = cd.numNotas && parseBR(cd.numNotas) > 0 ? ap.revenue / parseBR(cd.numNotas) : 0
 
-  // vencimentos agrupados por data
-  const withDue = taxesPos.filter((t) => t.dueDate)
+  // vencimentos agrupados por data — só datas VÁLIDAS (DD/MM/AAAA, mês 1–12, dia 1–31).
+  // Enquanto o usuário digita, a data fica parcial/inválida ("20/0", "20/13/2026");
+  // ignorá-la evita montar a agenda com mês fora de faixa (que quebrava a página em
+  // MONTHS[calM-1] / MONTHS_SHORT[...].toUpperCase()).
+  const withDue = taxesPos.filter((t) => {
+    const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(t.dueDate)
+    return !!m && +m[1] >= 1 && +m[1] <= 31 && +m[2] >= 1 && +m[2] <= 12
+  })
   const groupMap: Record<string, TaxRow[]> = {}
   withDue.forEach((t) => { (groupMap[t.dueDate] = groupMap[t.dueDate] || []).push(t) })
   const dayInfo = (s: string) => {
     const p = s.split("/"); const d = new Date(+p[2], +p[1] - 1, +p[0]); const t = new Date(); t.setHours(0, 0, 0, 0)
-    return { day: p[0], mo: MONTHS_SHORT[+p[1] - 1], diff: Math.ceil((d.getTime() - t.getTime()) / 86400000) }
+    return { day: p[0], mo: MONTHS_SHORT[+p[1] - 1] || "", diff: Math.ceil((d.getTime() - t.getTime()) / 86400000) }
   }
   const dueGroups: DueGroup[] = Object.entries(groupMap)
     .map(([date, items]) => ({ date, ...dayInfo(date), items, total: items.reduce((s, t) => s + parseBR(t.value), 0) }))

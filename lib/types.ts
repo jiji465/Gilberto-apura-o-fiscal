@@ -193,6 +193,8 @@ export interface LpInfo {
   adic: number
   csll: number
   issRate: number
+  /** Receita de serviço (mensal-equivalente) sujeita à equiparação hospitalar. */
+  equipRevenue?: number
 }
 
 export interface Economia {
