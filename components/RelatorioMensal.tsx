@@ -227,15 +227,19 @@ function VencCell({ g }: { g: DueGroup }) {
 }
 
 interface VItem { kind: "pay" | "acc" | "tot"; day?: string; mo?: string; name: string; sub: string; value?: number; tag?: string; hl?: boolean }
-function VRow({ r }: { r: VItem }) {
-  if (r.kind === "tot")
-    return <div className="vrow tot"><div className="vx"><div className="vn">{r.name}</div><div className="vsub">{r.sub}</div></div>{r.value != null && <div className="vv">{fmtBRL(r.value)}</div>}</div>
+// Célula compacta de vencimento — usada no grid de 3 colunas da Agenda, para caber
+// muitos vencimentos numa página só (sem página de continuação).
+function VCell({ r }: { r: VItem }) {
   return (
-    <div className={"vrow" + (r.hl ? " hl" : "")}>
-      <div className="vd">{r.day}<small>{r.mo}</small></div>
-      <div className="vx"><div className="vn">{r.name}</div><div className="vsub">{r.sub}</div></div>
-      {r.value != null && <div className="vv">{fmtBRL(r.value)}</div>}
-      {r.tag && <div className="vtag">{r.tag}</div>}
+    <div className={"vc" + (r.hl ? " hl" : "")}>
+      <div className="vc-d">{r.day}<small>{r.mo}</small></div>
+      <div className="vc-x">
+        <div className="vc-n" title={r.name}>{r.name}</div>
+        <div className="vc-r2">
+          {r.value != null && <span className="vc-v">{fmtBRL(r.value)}</span>}
+          {r.tag && <span className="vc-t">{r.tag}</span>}
+        </div>
+      </div>
     </div>
   )
 }
@@ -426,15 +430,16 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
       value: g.total, tag: diffLabel(g.diff), hl: g.diff < 0 || g.diff <= 5,
     }
   })
-  const totalRow: VItem = { kind: "tot", name: "Total a recolher", sub: `${withDue.length} guia${withDue.length !== 1 ? "s" : ""} · ${dueGroups.length} vencimento${dueGroups.length !== 1 ? "s" : ""} · ${MONTHS[calM - 1].toLowerCase()}`, value: totalRecolher }
-  const allV: VItem[] = [...payRows, totalRow]
+  const totSub = `${withDue.length} guia${withDue.length !== 1 ? "s" : ""} · ${dueGroups.length} vencimento${dueGroups.length !== 1 ? "s" : ""} · ${MONTHS[calM - 1].toLowerCase()}`
 
-  // paginação: 1ª página da Agenda (ao lado do calendário) leva FIRST itens; o resto vai p/ continuações
-  const FIRST = 5, CONT = 14
-  const firstChunk = allV.slice(0, FIRST)
-  const rest = allV.slice(FIRST)
+  // paginação: os vencimentos vão para um grid COMPACTO de 3 colunas (VCell), que cabe
+  // muito mais por página do que a antiga lista de 1 coluna — evitando abrir uma página
+  // de continuação quando há muitos vencimentos. Só transborda em casos extremos.
+  const FIRST = 18, CONT = 30
+  const firstPays = payRows.slice(0, FIRST)
+  const restPays = payRows.slice(FIRST)
   const contChunks: VItem[][] = []
-  for (let i = 0; i < rest.length; i += CONT) contChunks.push(rest.slice(i, i + CONT))
+  for (let i = 0; i < restPays.length; i += CONT) contChunks.push(restPays.slice(i, i + CONT))
 
   // observações: página(s) dedicada(s), paginadas p/ nunca estourar
   const obsChunks = cd.observacoes && cd.observacoes.trim() ? chunkObs(cd.observacoes.trim()) : []
@@ -449,6 +454,11 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
   const showAtiv = ativs.length > 1
   const ativRecTot = ativs.reduce((s, a) => s + a.receita, 0)
   const ativValTot = ativs.reduce((s, a) => s + a.valor, 0)
+  // Rosca da receita por atividade + segregação (comércio) p/ a página "Receita por Atividade".
+  const ativSegs = capSegs(ativs.map((a) => ({ label: a.descricao || a.anexo || a.tipo || "Atividade", value: a.receita })))
+  const maiorAtiv = ativs.reduce((m, a) => (a.receita > m.receita ? a : m), ativs[0] || { descricao: "", receita: 0, valor: 0, anexo: undefined, tipo: undefined })
+  const bcAtiv = comp.baseCalc
+  const temSegAtiv = bcAtiv.recMonofasica > 0.005 || bcAtiv.recST > 0.005
   const pgComp = showComp ? 2 : 0
   const pgAtiv = showAtiv ? 2 + (showComp ? 1 : 0) : 0
   const pgAgenda = 2 + (showComp ? 1 : 0) + (showAtiv ? 1 : 0)
@@ -566,9 +576,7 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
               <div className="panel f1 fx col">
                 <div className="slab" style={{ marginBottom: 2 }}><span style={{ color: "var(--muted)", letterSpacing: ".16em" }}>Carga tributária efetiva</span></div>
                 <Gauge value={ap.aliqEfetiva} />
-                <div className="g-note">{showEco && comp.melhor === comp.atual && ap.revenue > 0
-                  ? <>Carga <b style={{ color: "var(--num)" }}>abaixo</b> do {outroRegime} (≈ {(((comp.atual === "Simples Nacional" ? comp.totalPresumido : comp.totalSimples) / ap.revenue) * 100).toFixed(2).replace(".", ",")}%) para o mesmo faturamento.</>
-                  : "Tributos efetivos sobre o faturamento do mês."}</div>
+                <div className="g-note">Tributos efetivos sobre o faturamento do mês.</div>
               </div>
               <div className="panel f1 fx col">
                 <div className="slab" style={{ marginBottom: 4 }}><span style={{ color: "var(--muted)", letterSpacing: ".16em" }}>Composição dos tributos</span></div>
@@ -673,23 +681,48 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
           <Header eyebrow="Atividades" title="Receita por Atividade" comp={<>Competência <b>{compPretty}</b></>} />
           <div className="main"><div className="stack">
             <ClientBar cols={[clientCols[0], clientCols[1], clientCols[2], { k: "Atividades", v: String(ativs.length) }]} />
-            <div className="sec" style={{ flex: 1 }}><Slab>{isSN ? "Receita e DAS por atividade" : "Receita e base presumida por atividade"}</Slab>
+            <div className="sec" style={{ flex: 1 }}><Slab>Composição da receita</Slab>
+              <div className="fx gap16" style={{ flex: 1, minHeight: 0, alignItems: "stretch" }}>
+                <div className="panel f1 fx col ac" style={{ justifyContent: "center" }}>
+                  <Donut segs={ativSegs} total={ativRecTot} />
+                </div>
+                <div className="dcards" style={{ gridTemplateColumns: "1fr", flex: "none", width: 234 }}>
+                  {temSegAtiv ? (
+                    <>
+                      <MetricCard k="Receita bruta" v={fmtBRL(ativRecTot)} s={`soma de ${ativs.length} atividades`} />
+                      <MetricCard k="Revenda monofásica" v={fmtBRL(bcAtiv.recMonofasica)} s="PIS/COFINS zero na revenda" />
+                      <MetricCard k="Vendas em ST" v={fmtBRL(bcAtiv.recST)} s="ICMS recolhido na origem" />
+                    </>
+                  ) : (
+                    <>
+                      <MetricCard k="Receita bruta" v={fmtBRL(ativRecTot)} s={`soma de ${ativs.length} atividades`} />
+                      <MetricCard k="Maior atividade" v={`${(maiorAtiv.receita / (ativRecTot || 1) * 100).toFixed(0)}%`} s={maiorAtiv.descricao || "—"} />
+                      <MetricCard k={isSN ? "DAS total" : "Base IRPJ total"} v={fmtBRL(ativValTot)} s={isSN ? "oficial do PGDAS-D" : "presunção somada"} />
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="sec"><Slab>{isSN ? "Receita e DAS por atividade" : "Receita e base presumida por atividade"}</Slab>
               <div className="atbl">
                 <div className="atbl-h"><span>Atividade</span><span>{isSN ? "Anexo" : "Tipo"}</span><span className="r">Receita</span><span className="r">{isSN ? "DAS" : "Base IRPJ"}</span><span className="r">%</span></div>
-                {ativs.map((a, i) => (
-                  <div className="atbl-r" key={i}>
-                    <span className="atbl-d">{a.descricao}{a.substituicaoICMS ? <em className="atbl-tag">ST</em> : null}{a.monofasica ? <em className="atbl-tag">mono</em> : null}</span>
-                    <span>{a.anexo || a.tipo || "—"}</span>
-                    <span className="r">{fmtBRL(a.receita)}</span>
-                    <span className="r">{fmtBRL(a.valor)}</span>
-                    <span className="r">{(ativRecTot > 0 ? (a.receita / ativRecTot) * 100 : 0).toFixed(1).replace(".", ",")}%</span>
-                  </div>
-                ))}
+                {ativs.map((a, i) => {
+                  const pct = ativRecTot > 0 ? (a.receita / ativRecTot) * 100 : 0
+                  return (
+                    <div className="atbl-r" key={i}>
+                      <span className="atbl-d">{a.descricao}{a.substituicaoICMS ? <em className="atbl-tag">ST</em> : null}{a.monofasica ? <em className="atbl-tag">mono</em> : null}<span className="atbl-share"><i style={{ width: `${pct.toFixed(1)}%` }} /></span></span>
+                      <span>{a.anexo || a.tipo || "—"}</span>
+                      <span className="r">{fmtBRL(a.receita)}</span>
+                      <span className="r">{fmtBRL(a.valor)}</span>
+                      <span className="r">{pct.toFixed(1).replace(".", ",")}%</span>
+                    </div>
+                  )
+                })}
                 <div className="atbl-t"><span>Total</span><span /><span className="r">{fmtBRL(ativRecTot)}</span><span className="r">{fmtBRL(ativValTot)}</span><span className="r">100%</span></div>
               </div>
-              <div className="g-note" style={{ maxWidth: "none", textAlign: "left", marginTop: 12 }}>{isSN
-                ? <>DAS por atividade conforme o PGDAS-D. O <b>total</b> é o valor oficial da guia — já com ICMS-ST e PIS/COFINS monofásico considerados.</>
-                : <>Base presumida do IRPJ por atividade (serviços 32%, comércio/indústria 8%). O IRPJ e a CSLL do mês somam as bases de cada atividade.</>}</div>
+              <div className="atbl-foot">{isSN
+                ? <>Total = valor <b>oficial do DAS</b> (PGDAS-D), já líquido de ICMS-ST e PIS/COFINS monofásico.</>
+                : <>Base presumida do IRPJ por atividade — o IRPJ/CSLL do mês somam as bases de cada uma.</>}</div>
             </div>
           </div>
             <Footer note={`Receita por atividade · Pág. ${pgAtiv} de ${totalPg}`} />
@@ -715,7 +748,8 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
           <div className="sec" style={{ flex: 1 }}><Slab>Calendário de vencimentos</Slab>
             <div className="fx col gap10" style={{ flex: 1, minHeight: 0 }}>
               <Calendar year={calY} month={calM} payDays={payDays} />
-              <div className="vlist" style={{ flexShrink: 0 }}>{firstChunk.map((r, i) => <VRow key={i} r={r} />)}</div>
+              {firstPays.length > 0 && <div className="venc">{firstPays.map((r, i) => <VCell key={i} r={r} />)}</div>}
+              <div className="venc-tot"><div className="l">Total a recolher<small>{totSub}</small></div><div className="v">{fmtBRL(totalRecolher)}</div></div>
             </div>
           </div>
         </div>
@@ -729,7 +763,7 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
           <Header eyebrow="Continuação" title="Agenda Fiscal" comp={<>Vencimentos (cont.) · <b>{MONTHS[calM - 1]} / {calY}</b></>} />
           <div className="main"><div className="stack">
             <div className="sec" style={{ flex: 1 }}><Slab>Vencimentos — continuação ({ci + 2}/{contChunks.length + 1})</Slab>
-              <div className="vlist">{chunk.map((r, i) => <VRow key={i} r={r} />)}</div>
+              <div className="venc">{chunk.map((r, i) => <VCell key={i} r={r} />)}</div>
             </div>
           </div>
             <Footer note={`Continuação da agenda fiscal · Pág. ${pgCont(ci)} de ${totalPg}`} />
@@ -973,7 +1007,24 @@ const STYLE = `
 .gn-doc .vtag{font:600 7.5px var(--font-jost);letter-spacing:.08em;text-transform:uppercase;color:var(--gold);flex:none}
 .gn-doc .vrow.tot .vd,.gn-doc .vrow.tot .vn,.gn-doc .vrow.tot .vv{color:#f5f1e6}
 .gn-doc .vrow.tot .vd small,.gn-doc .vrow.tot .vsub{color:#b9c0a3}
-.gn-doc .venc{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+.gn-doc .venc{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+.gn-doc .vc{display:flex;align-items:center;gap:9px;background:var(--card);border:1px solid var(--bd);border-radius:9px;padding:7px 10px;min-width:0}
+.gn-doc .vc.hl{background:var(--tint);border-color:#e6d3b8}
+.gn-doc .vc-d{font:700 15px var(--font-jost);color:var(--num);line-height:.85;text-align:center;flex:none;min-width:22px}
+.gn-doc .vc-d small{display:block;font:500 6.5px var(--font-jost);letter-spacing:.06em;color:var(--muted);margin-top:2px}
+.gn-doc .vc-x{flex:1;min-width:0}
+.gn-doc .vc-n{font:600 9.5px var(--font-plex);color:#334023;line-height:1.15;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gn-doc .vc-r2{display:flex;align-items:baseline;justify-content:space-between;gap:6px;margin-top:2px}
+.gn-doc .vc-v{font:700 10.5px var(--font-jost);color:var(--num);font-variant-numeric:tabular-nums}
+.gn-doc .vc-t{font:600 7px var(--font-jost);letter-spacing:.05em;text-transform:uppercase;color:var(--gold);flex:none;white-space:nowrap}
+.gn-doc .venc-tot{display:flex;justify-content:space-between;align-items:center;padding:10px 17px;background:var(--green-dk);border-radius:10px;margin-top:2px;flex:none}
+.gn-doc .venc-tot .l{font:600 9px var(--font-jost);letter-spacing:.14em;text-transform:uppercase;color:#c9a85a}
+.gn-doc .venc-tot .l small{display:block;font:400 8.5px var(--font-plex);letter-spacing:0;text-transform:none;color:#b9c0a3;margin-top:3px}
+.gn-doc .venc-tot .v{font:700 17px var(--font-jost);color:#f5f1e6;font-variant-numeric:tabular-nums}
+.gn-doc .atbl-share{display:block;height:4px;border-radius:3px;background:var(--bd2);margin-top:6px;overflow:hidden;max-width:200px}
+.gn-doc .atbl-share i{display:block;height:100%;background:var(--gold-grad);border-radius:3px}
+.gn-doc .atbl-foot{margin-top:12px;font:400 9.5px/1.5 var(--font-plex);color:var(--muted)}
+.gn-doc .atbl-foot b{color:#6a4e12;font-weight:600}
 .gn-doc .obsbox{background:var(--card);border:1px solid var(--bd);border-radius:13px;padding:15px 17px;font:400 11px/1.65 var(--font-plex);color:#3a4530;white-space:pre-wrap}
 .gn-doc .gmwrap{border:1px solid var(--bd);border-radius:13px;overflow:hidden;background:var(--card)}
 .gn-doc .gmgrid{display:flex;flex-direction:column}
