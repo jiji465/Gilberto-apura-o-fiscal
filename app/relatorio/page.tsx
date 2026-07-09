@@ -215,6 +215,9 @@ export default function RelatorioPage() {
       const next = { ...p, [k]: v }
       if (["revenue", "rbt12", "anexo", "atividade", "regime"].includes(k as string)) delete next.repartManual
       if (["anexo", "atividade", "regime"].includes(k as string)) delete next.overrides
+      // Mantém competenceShort (MM/AAAA) sincronizado ao mudar mês OU ano.
+      if (k === "compMonth" || k === "compYear")
+        next.competenceShort = next.compMonth ? String(next.compMonth).padStart(2, "0") + "/" + (next.compYear || "") : next.competenceShort
       // No Simples, mantém Atividade e Anexo coerentes (anexo é a fonte autoritativa).
       if (next.regime === "Simples Nacional") {
         if (k === "anexo" && next.anexo) next.atividade = ATIV_DO_ANEXO[next.anexo] || next.atividade
@@ -270,6 +273,8 @@ export default function RelatorioPage() {
   // Projeção Lucro Presumido (comparativo ao vivo) — só faz sentido p/ Simples.
   const comp = useMemo(() => simularComparativo(cd, ap, params), [cd, ap, params])
   const temComercio = cd.atividade !== "Serviços" || (cd.atividades || []).some((a) => a.anexo === "Anexo I" || a.anexo === "Anexo II" || a.tipo === "Comércio" || a.tipo === "Indústria")
+  // Só trava o "Faturamento" como soma quando há atividade com receita > 0 (igual ao motor).
+  const temAtivReceita = (cd.atividades || []).some((a) => parseBR(a.receita) > 0)
   const isWide = useIsWide()
   // Apuração "atrasada" só para o preview/export — evita re-render do relatório a cada tecla.
   const cdView = useDebounced(cd, 250)
@@ -442,7 +447,7 @@ export default function RelatorioPage() {
               <label className="block md:col-span-2"><span className="label">CNPJ</span>
                 <input className="input" value={cd.cnpj || ""} onChange={(e) => upd("cnpj", fmtCNPJ(e.target.value))} placeholder="00.000.000/0000-00" /></label>
               <label className="block"><span className="label">Mês</span>
-                <select className="input" value={cd.compMonth || ""} onChange={(e) => { upd("compMonth", e.target.value); upd("competenceShort", e.target.value.padStart(2, "0") + "/" + (cd.compYear || "")) }}>
+                <select className="input" value={cd.compMonth || ""} onChange={(e) => upd("compMonth", e.target.value)}>
                   <option value="">Mês</option>
                   {MONTHS.map((m, i) => <option key={i} value={String(i + 1)}>{m}</option>)}
                 </select></label>
@@ -516,12 +521,13 @@ export default function RelatorioPage() {
           <Section n={3} title="Faturamento" open={!!openSec[3]} onToggle={() => toggleSec(3)}
             subtitle={ap.revenue > 0 ? `Receita do mês ${fmtBRL(ap.revenue)}` : "Receita do mês e acumulado 12m"}>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <label className="block"><span className="label">Faturamento do mês (R$){(cd.atividades?.length || 0) > 0 ? " — soma das atividades" : ""}</span>
-                {(cd.atividades?.length || 0) > 0
+              <label className="block"><span className="label">Faturamento do mês (R$){temAtivReceita ? " — soma das atividades" : ""}</span>
+                {temAtivReceita
                   ? <div className="input flex items-center bg-[#f7f5ef] text-[var(--muted)] cursor-default tabular-nums">{fmtBRL(ap.revenue)}</div>
                   : <Money value={cd.revenue} onChange={(v) => upd("revenue", v)} />}</label>
               {isSN && <label className="block"><span className="label">Faturamento acum. 12m <span className="text-[var(--muted)] font-normal">(RBT12)</span></span>
-                <Money value={cd.rbt12} onChange={(v) => upd("rbt12", v)} /></label>}
+                <Money value={cd.rbt12} onChange={(v) => upd("rbt12", v)} />
+                {parseBR(cd.rbt12) <= 0 && ap.revenue > 0 && <span className="mt-1 block text-[11px] leading-snug text-amber-600">Sem RBT12: usando <b>receita × 12</b> como estimativa — informe o acumulado 12m para a faixa/DAS ficarem exatos.</span>}</label>}
               {isLP && <label className="block"><span className="label">Receita do trimestre <span className="text-[var(--muted)] font-normal">(base IRPJ/CSLL)</span></span>
                 <Money value={cd.receitaTrimestre} onChange={(v) => upd("receitaTrimestre", v)} />
                 <span className="mt-1 block text-[11px] leading-snug text-[var(--muted)]">IRPJ/CSLL são trimestrais. Vazio = usa receita do mês × 3. Preencha para a provisão ficar exata.</span></label>}

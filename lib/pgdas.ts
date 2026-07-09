@@ -161,8 +161,10 @@ export function parsePGDAS(raw: string): PgdasResult | null {
     const recM = b.match(/Receita\s+Bruta\s+Informada[:\s]*R?\$?\s*([\d.]+,\d{2})/i)
     const subST = /Com\s+substitui[çc][ãa]o\s+tribut[áa]ria/i.test(descricao) || /Substitui[çc][ãa]o\s+tribut[áa]ria\s+de:\s*ICMS/i.test(b)
     const mono = /Tributa[çc][ãa]o\s+monof[áa]sica\s+de:/i.test(b)
-    // Anexo da atividade pela repartição: ISS→serviços (III), IPI→indústria (II), ICMS→comércio (I).
-    const anexo = parseBR(rp.repart.ISS) > 0 ? "Anexo III" : parseBR(rp.repart.IPI) > 0 ? "Anexo II" : parseBR(rp.repart.ICMS) > 0 ? "Anexo I" : undefined
+    // Anexo da atividade pela repartição: ISS→serviços, IPI→indústria (II), ICMS→comércio (I).
+    // Serviço: se o extrato já indicou Anexo IV ou V (Fator R), respeita; senão III.
+    const anexoServ = f.anexo === "Anexo IV" || f.anexo === "Anexo V" ? f.anexo : "Anexo III"
+    const anexo = parseBR(rp.repart.ISS) > 0 ? anexoServ : parseBR(rp.repart.IPI) > 0 ? "Anexo II" : parseBR(rp.repart.ICMS) > 0 ? "Anexo I" : undefined
     atividades.push({ descricao, receita: recM ? recM[1] : "", repart: rp.repart, total: rp.total, substituicaoICMS: subST, monofasica: mono, anexo })
   }
 
@@ -178,8 +180,10 @@ export function parsePGDAS(raw: string): PgdasResult | null {
   if (!Object.keys(repart).length) return null
 
   const issN = parseBR(repart.ISS), ipiN = parseBR(repart.IPI), icmsN = parseBR(repart.ICMS)
+  // Atividade e anexo default CONSISTENTES entre si (issN→Serviços/III, ipiN→Indústria/II,
+  // icmsN→Comércio/I; all-zero → Serviços/III).
   f.atividade = issN > 0 ? "Serviços" : ipiN > 0 ? "Indústria" : icmsN > 0 ? "Comércio" : "Serviços"
-  if (!f.anexo) f.anexo = issN > 0 ? "Anexo III" : ipiN > 0 ? "Anexo II" : "Anexo I"
+  if (!f.anexo) f.anexo = ipiN > 0 ? "Anexo II" : icmsN > 0 ? "Anexo I" : "Anexo III"
 
   const seg: PgdasSegregacao = { icmsNormal: 0, icmsST: 0, issTotal: issN, pisCofinsMonofasico: 0, pisCofinsNormal: 0 }
   if (atividades.length) {
