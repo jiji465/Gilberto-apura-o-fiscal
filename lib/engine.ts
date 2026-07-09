@@ -630,6 +630,25 @@ export interface Comparativo {
   simulavel: boolean
   /** true p/ comércio/indústria: o ICMS do lado Presumido é estimado (% efetivo). */
   estimado: boolean
+  /** Base de cálculo da projeção do Lucro Presumido — transparência das exclusões:
+   *  a revenda monofásica sai da base de PIS/COFINS e as vendas em ST saem da base de
+   *  ICMS (já tributadas na origem). IRPJ/CSLL presumem sobre a receita bruta total. */
+  baseCalc: {
+    /** Receita bruta total (base de partida do PIS/COFINS). */
+    receita: number
+    /** Receita de comércio/indústria (base de partida do ICMS). */
+    receitaComercio: number
+    /** Revenda monofásica — excluída da base de PIS/COFINS. */
+    recMonofasica: number
+    /** Vendas em ICMS-ST — excluídas da base de ICMS. */
+    recST: number
+    /** Base líquida de PIS/COFINS (receita − monofásica). */
+    basePisCofins: number
+    /** Base líquida de ICMS (receita comércio − ST). */
+    baseICMS: number
+    /** Há base de ICMS/comércio (mostra a coluna do ICMS). */
+    comercio: boolean
+  }
 }
 
 const COMP_ORDEM = ["DAS", "PIS", "COFINS", "IRPJ", "Adicional IRPJ", "CSLL", "ISS", "ICMS", "CPP (Patronal)", "RAT", "Terceiros", "FGTS", "INSS (Pró-labore)"]
@@ -657,6 +676,11 @@ export function simularComparativo(cd: ClientData, ap: Apuracao, params: Paramet
   // Receita em ST (por parcela quando disponível; senão a atividade inteira se marcada).
   const recST = ativsCmp.reduce((s, a) => s + (a.receitaST ? parseBR(a.receitaST) : (a.substituicaoICMS ? parseBR(a.receita) : 0)), 0)
   const baseICMS = Math.max(0, recComercio - recST)
+  // Receita monofásica (revenda PIS/COFINS zero) — mesma lógica por parcela usada em
+  // computeApuracao, para o quadro de "base de cálculo" refletir EXATAMENTE a base que
+  // a projeção do Lucro Presumido usa no PIS/COFINS.
+  const recMonofasica = ativsCmp.reduce((s, a) => s + (a.receitaMonofasica ? parseBR(a.receitaMonofasica) : (a.monofasica ? parseBR(a.receita) : 0)), 0)
+  const basePisCofins = Math.max(0, ap.revenue - recMonofasica)
   const icmsLP = isLP && parseBR(cd.icmsRecolher) > 0 ? parseBR(cd.icmsRecolher) : baseICMS * (parseBR(cd.icmsCompPct) / 100)
   const apS = isSN ? ap : computeApuracao({ ...base, regime: "Simples Nacional", anexo: cd.anexo || "Anexo III" }, params)
   const apP = isLP ? ap : computeApuracao({ ...base, regime: "Lucro Presumido", atividade: ativComparativo, icmsRecolher: fmtNum(icmsLP) }, params)
@@ -683,5 +707,14 @@ export function simularComparativo(cd: ClientData, ap: Apuracao, params: Paramet
     economia: Math.abs(totalSimples - totalPresumido),
     melhor: totalSimples <= totalPresumido ? "Simples Nacional" : "Lucro Presumido",
     atual, simulavel, estimado: baseICMS > 0 && !(isLP && parseBR(cd.icmsRecolher) > 0),
+    baseCalc: {
+      receita: ap.revenue,
+      receitaComercio: recComercio,
+      recMonofasica,
+      recST,
+      basePisCofins,
+      baseICMS,
+      comercio: recComercio > 0.005,
+    },
   }
 }
