@@ -680,7 +680,7 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
           <div className="main"><div className="stack">
             <ClientBar cols={[clientCols[0], clientCols[1], clientCols[2], { k: "Atividades", v: String(ativs.length) }]} />
             <div className="sec" style={{ flex: 1 }}><Slab>Composição da receita</Slab>
-              <div className="fx col" style={{ flex: 1, justifyContent: "center", gap: 18 }}>
+              <div className="fx col" style={{ gap: 15 }}>
                 {/* barra 100% empilhada */}
                 <div className="rbar">
                   {ativs.map((a, i) => {
@@ -697,6 +697,7 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
                         <i className="ait-dot" style={{ background: COMP_COLORS[i % COMP_COLORS.length] }} />
                         <div className="ait-x">
                           <div className="ait-n">{atividadeCurta(a.descricao)}{a.substituicaoICMS ? <em className="atbl-tag">ST</em> : null}{a.monofasica ? <em className="atbl-tag">mono</em> : null}</div>
+                          <div className="ait-bar"><i style={{ width: `${pct.toFixed(1)}%`, background: COMP_COLORS[i % COMP_COLORS.length] }} /></div>
                           <div className="ait-meta">{a.anexo || a.tipo || "—"} · {isSN ? "DAS" : "Base IRPJ"} {fmtBRL(a.valor)}</div>
                         </div>
                         <div className="ait-nums"><div className="ait-v">{fmtBRL(a.receita)}</div><div className="ait-p">{pct.toFixed(1).replace(".", ",")}%</div></div>
@@ -709,10 +710,13 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
                   </div>
                 </div>
                 {temSegAtiv && (
-                  <div className="dcards" style={{ flex: "none" }}>
-                    <MetricCard k="Receita bruta" v={fmtBRL(ativRecTot)} s={`soma de ${ativs.length} atividades`} />
-                    <MetricCard k="Revenda monofásica" v={fmtBRL(bcAtiv.recMonofasica)} s="PIS/COFINS zero na revenda" />
-                    <MetricCard k="Vendas em ST" v={fmtBRL(bcAtiv.recST)} s="ICMS recolhido na origem" />
+                  <div className="segwrap">
+                    <div className="slab" style={{ marginBottom: 2 }}><span style={{ color: "var(--muted)", letterSpacing: ".16em" }}>Segregação tributária (PGDAS-D)</span></div>
+                    <div className="dcards" style={{ flex: "none" }}>
+                      <MetricCard k="Receita bruta" v={fmtBRL(ativRecTot)} s={`soma de ${ativs.length} atividades`} />
+                      <MetricCard k="Revenda monofásica" v={fmtBRL(bcAtiv.recMonofasica)} s="PIS/COFINS zero — revenda" />
+                      <MetricCard k="Vendas em ST" v={fmtBRL(bcAtiv.recST)} s="ICMS recolhido na origem" />
+                    </div>
                   </div>
                 )}
               </div>
@@ -1021,15 +1025,17 @@ const STYLE = `
 .gn-doc .atbl-share i{display:block;height:100%;background:var(--gold-grad);border-radius:3px}
 .gn-doc .atbl-foot{margin-top:12px;font:400 9.5px/1.5 var(--font-plex);color:var(--muted)}
 .gn-doc .atbl-foot b{color:#6a4e12;font-weight:600}
-.gn-doc .rbar{display:flex;height:22px;border-radius:7px;overflow:hidden;border:1px solid var(--bd);background:var(--card)}
+.gn-doc .rbar{display:flex;height:26px;border-radius:7px;overflow:hidden;border:1px solid var(--bd);background:var(--card)}
 .gn-doc .rbar-seg{display:flex;align-items:center;justify-content:center;min-width:2px;color:#fff;font:700 10px var(--font-jost);text-shadow:0 1px 1.5px rgba(0,0,0,.22);box-shadow:inset -1px 0 0 rgba(255,255,255,.35)}
 .gn-doc .alist{display:flex;flex-direction:column;border:1px solid var(--bd);border-radius:12px;overflow:hidden;background:var(--card)}
-.gn-doc .ait{display:flex;align-items:center;gap:13px;padding:10px 15px;border-top:1px solid var(--bd2)}
+.gn-doc .ait{display:flex;align-items:center;gap:13px;padding:22px 16px;border-top:1px solid var(--bd2)}
 .gn-doc .ait:first-child{border-top:none}
 .gn-doc .ait-dot{width:12px;height:12px;border-radius:4px;flex:none}
 .gn-doc .ait-x{flex:1;min-width:0}
 .gn-doc .ait-n{font:600 11.5px var(--font-plex);color:#334023;line-height:1.25}
-.gn-doc .ait-meta{font:400 9px var(--font-plex);color:var(--muted);margin-top:3px}
+.gn-doc .ait-meta{font:400 9px var(--font-plex);color:var(--muted);margin-top:7px}
+.gn-doc .ait-bar{height:8px;border-radius:5px;background:var(--bd2);overflow:hidden;margin-top:8px;max-width:340px}
+.gn-doc .ait-bar i{display:block;height:100%;border-radius:5px}
 .gn-doc .ait-nums{text-align:right;flex:none}
 .gn-doc .ait-v{font:700 13px var(--font-jost);color:var(--num);font-variant-numeric:tabular-nums}
 .gn-doc .ait-p{font:600 9.5px var(--font-jost);color:var(--gold);margin-top:2px}
@@ -1037,6 +1043,8 @@ const STYLE = `
 .gn-doc .ait.tot .ait-n{font:700 11.5px var(--font-jost);color:var(--num)}
 .gn-doc .ait.tot .ait-v{font-size:14.5px}
 .gn-doc .ait.tot .ait-p{color:var(--muted)}
+.gn-doc .segwrap{display:flex;flex-direction:column;gap:9px}
+.gn-doc .segwrap .dcard{min-height:138px;justify-content:center}
 .gn-doc .obsbox{background:var(--card);border:1px solid var(--bd);border-radius:13px;padding:15px 17px;font:400 11px/1.65 var(--font-plex);color:#3a4530;white-space:pre-wrap}
 .gn-doc .gmwrap{border:1px solid var(--bd);border-radius:13px;overflow:hidden;background:var(--card)}
 .gn-doc .gmgrid{display:flex;flex-direction:column}
