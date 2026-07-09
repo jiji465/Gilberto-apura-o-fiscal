@@ -7,7 +7,7 @@ import { useMemo } from "react"
 // Apurações grandes (muitos vencimentos/guias) geram páginas de continuação
 // "Agenda Fiscal (cont.)" — nada é cortado. id #rep-overlay e classe .sheet → PDF/print.
 import { ESCRITORIO, TETO_SIMPLES, PARAMETROS_PADRAO, type ParametrosFiscais } from "@/lib/config"
-import { fmtBRL, fmtPct, parseBR, fmtK, fmtKm, MONTHS, MONTHS_SHORT } from "@/lib/format"
+import { fmtBRL, fmtPct, parseBR, fmtK, fmtKm, atividadeCurta, MONTHS, MONTHS_SHORT } from "@/lib/format"
 import { simularComparativo } from "@/lib/engine"
 import type { Apuracao, ClientData, HistPoint, TaxRow } from "@/lib/types"
 
@@ -455,7 +455,7 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
   const ativRecTot = ativs.reduce((s, a) => s + a.receita, 0)
   const ativValTot = ativs.reduce((s, a) => s + a.valor, 0)
   // Rosca da receita por atividade + segregação (comércio) p/ a página "Receita por Atividade".
-  const ativSegs = capSegs(ativs.map((a) => ({ label: a.descricao || a.anexo || a.tipo || "Atividade", value: a.receita })))
+  const ativSegs = capSegs(ativs.map((a) => ({ label: (atividadeCurta(a.descricao) || a.anexo || a.tipo || "Atividade") + (a.substituicaoICMS || a.monofasica ? " (ST/mono)" : ""), value: a.receita })))
   const maiorAtiv = ativs.reduce((m, a) => (a.receita > m.receita ? a : m), ativs[0] || { descricao: "", receita: 0, valor: 0, anexo: undefined, tipo: undefined })
   const bcAtiv = comp.baseCalc
   const temSegAtiv = bcAtiv.recMonofasica > 0.005 || bcAtiv.recST > 0.005
@@ -710,7 +710,7 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
                   const pct = ativRecTot > 0 ? (a.receita / ativRecTot) * 100 : 0
                   return (
                     <div className="atbl-r" key={i}>
-                      <span className="atbl-d">{a.descricao}{a.substituicaoICMS ? <em className="atbl-tag">ST</em> : null}{a.monofasica ? <em className="atbl-tag">mono</em> : null}<span className="atbl-share"><i style={{ width: `${pct.toFixed(1)}%` }} /></span></span>
+                      <span className="atbl-d">{atividadeCurta(a.descricao)}{a.substituicaoICMS ? <em className="atbl-tag">ST</em> : null}{a.monofasica ? <em className="atbl-tag">mono</em> : null}<span className="atbl-share"><i style={{ width: `${pct.toFixed(1)}%` }} /></span></span>
                       <span>{a.anexo || a.tipo || "—"}</span>
                       <span className="r">{fmtBRL(a.receita)}</span>
                       <span className="r">{fmtBRL(a.valor)}</span>
