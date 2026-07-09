@@ -68,9 +68,9 @@ export interface ClientData {
   ret?: Record<string, string>
   extraTaxes?: ExtraTax[]
   repartManual?: Record<string, string>
-  /** Ajustes manuais por tributo (grade "Impostos a recolher"): valor, vencimento
-   *  e/ou se conta na competência (carga efetiva + composição). */
-  overrides?: Record<string, { value?: string; dueDate?: string; conta?: boolean }>
+  /** Ajustes manuais por tributo (grade "Impostos a recolher"): valor, vencimento,
+   *  se conta na competência (carga efetiva + composição) e/ou se foi apagada (`off`). */
+  overrides?: Record<string, { value?: string; dueDate?: string; conta?: boolean; off?: boolean }>
   dasOfficial?: string
   // segregação lida do PGDAS-D (comércio: economia por monofásico/ST)
   segIcmsST?: number

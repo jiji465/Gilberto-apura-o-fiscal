@@ -240,7 +240,7 @@ export default function RelatorioPage() {
   const updItem = (id: string | number, field: keyof ExtraTax, v: any) =>
     setCd((p) => ({ ...p, extraTaxes: (p.extraTaxes || []).map((e) => (e.id === id ? { ...e, [field]: v } : e)) }))
   const delItem = (id: string | number) => setCd((p) => ({ ...p, extraTaxes: (p.extraTaxes || []).filter((e) => e.id !== id) }))
-  const setOverride = (tax: string, field: "value" | "dueDate" | "conta", v: string | boolean) =>
+  const setOverride = (tax: string, field: "value" | "dueDate" | "conta" | "off", v: string | boolean) =>
     setCd((p) => ({ ...p, overrides: { ...(p.overrides || {}), [tax]: { ...(p.overrides?.[tax] || {}), [field]: v } } }))
   const recalcular = () => setCd((p) => { const n = { ...p }; delete n.overrides; return n })
 
@@ -617,7 +617,10 @@ export default function RelatorioPage() {
                   <div className="col-span-2 md:col-span-4"><div className="px-1 text-sm font-medium text-[var(--ink)]">{t.tax}<span className="text-[10px] text-[var(--muted)] ml-2 uppercase tracking-wide">{t.group}</span></div></div>
                   <div className="md:col-span-3"><Money value={cd.overrides?.[t.tax]?.value ?? t.value} onChange={(v) => setOverride(t.tax, "value", v)} /></div>
                   <div className="md:col-span-3"><DateBR value={cd.overrides?.[t.tax]?.dueDate ?? t.dueDate} onChange={(v) => setOverride(t.tax, "dueDate", v)} /></div>
-                  <div className="md:col-span-2"><ContaToggle on={!!t.contaCompetencia} onToggle={() => setOverride(t.tax, "conta", !t.contaCompetencia)} /></div>
+                  <div className="md:col-span-2 flex items-center gap-1">
+                    <ContaToggle on={!!t.contaCompetencia} onToggle={() => setOverride(t.tax, "conta", !t.contaCompetencia)} />
+                    <button className="btn btn-outline px-2 py-2 text-red-600 shrink-0" onClick={() => setOverride(t.tax, "off", true)} title="Apagar esta guia (Recalcular restaura)" aria-label="Apagar"><Trash2 className="h-3.5 w-3.5" /></button>
+                  </div>
                 </div>
               ))}
               {(cd.extraTaxes || []).filter((e) => e.group !== "Parcelamento").map((e) => (
