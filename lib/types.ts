@@ -114,6 +114,8 @@ export interface AtividadeLinha {
   dasAtividade?: string
   substituicaoICMS?: boolean
   monofasica?: boolean
+  /** Receita das parcelas monofásicas da atividade (PIS/COFINS zero) — precisão por parcela. */
+  receitaMonofasica?: string
 }
 
 export interface ExtraTax {

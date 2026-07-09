@@ -361,7 +361,11 @@ export function computeApuracao(cd: ClientData, params: ParametrosFiscais = PARA
     // Base de PIS/COFINS líquida da revenda monofásica (essa parte já foi tributada na
     // origem, alíquota zero na revenda). Vem das atividades marcadas como monofásicas
     // no PGDAS-D — torna a projeção exata sem digitar nada a mais.
-    const recMonofasica = multiAtiv ? atividadesIn.filter((a) => a.monofasica).reduce((s, a) => s + parseBR(a.receita), 0) : 0
+    // Receita monofásica: usa o valor por parcela (preciso) quando disponível; senão cai
+    // no flag da atividade inteira (entrada manual / rascunhos antigos sem o campo).
+    const recMonofasica = multiAtiv
+      ? atividadesIn.reduce((s, a) => s + (a.receitaMonofasica ? parseBR(a.receitaMonofasica) : (a.monofasica ? parseBR(a.receita) : 0)), 0)
+      : 0
     const basePisCofins = Math.max(0, revenue - recMonofasica)
     const monoNota = recMonofasica > 0 ? ` • base líquida de monofásico (−${fmtNum(recMonofasica)})` : ""
     pushLP("PIS", basePisCofins, params.pisCumulativo, basePisCofins * (params.pisCumulativo / 100), `Regime cumulativo (${params.pisCumulativo.toFixed(2).replace(".", ",")}%)${monoNota}`, "PIS/COFINS")
