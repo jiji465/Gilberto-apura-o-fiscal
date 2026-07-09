@@ -431,9 +431,9 @@ export default function RelatorioPage() {
                 <p className="text-sm text-[var(--muted)]">{temComercio ? <>Para projetar o comércio, informe o <b>ICMS efetivo (%)</b> abaixo.</> : "Informe o faturamento (ou importe o PGDAS-D) para ver a projeção."}</p>
               )}
               {temComercio && (
-                <label className="block mt-3 max-w-sm"><span className="label">ICMS efetivo (%) <span className="text-[var(--muted)] font-normal">— sobre as vendas tributáveis (fora ST)</span></span>
+                <label className="block mt-3 max-w-sm"><span className="label">ICMS efetivo estimado (%) <span className="text-[var(--muted)] font-normal">— sobre as vendas tributáveis (fora ST)</span></span>
                   <input className="input" value={cd.icmsCompPct ?? ""} onChange={(e) => upd("icmsCompPct", e.target.value)} placeholder="ex.: 5" />
-                  <span className="mt-1 block text-[11px] leading-snug text-[var(--muted)]">Alíquota (ICMS a recolher ÷ vendas tributáveis). A parte em ST é <b>excluída automaticamente</b> do PGDAS-D. Estimativa — confira no SPED.</span></label>
+                  <span className="mt-1 block text-[11px] leading-snug text-[var(--muted)]">Sua <b>estimativa</b> da alíquota efetiva no LP (alíquota interna do estado − créditos das compras). A parte em ST já é excluída do PGDAS-D. O ICMS exato só se apura depois, já no Lucro Presumido.</span></label>
               )}
             </div>
           )}
