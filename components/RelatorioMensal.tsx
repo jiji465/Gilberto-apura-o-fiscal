@@ -454,9 +454,7 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
   const showAtiv = ativs.length > 1
   const ativRecTot = ativs.reduce((s, a) => s + a.receita, 0)
   const ativValTot = ativs.reduce((s, a) => s + a.valor, 0)
-  // Rosca da receita por atividade + segregação (comércio) p/ a página "Receita por Atividade".
-  const ativSegs = capSegs(ativs.map((a) => ({ label: (atividadeCurta(a.descricao) || a.anexo || a.tipo || "Atividade") + (a.substituicaoICMS || a.monofasica ? " (ST/mono)" : ""), value: a.receita })))
-  const maiorAtiv = ativs.reduce((m, a) => (a.receita > m.receita ? a : m), ativs[0] || { descricao: "", receita: 0, valor: 0, anexo: undefined, tipo: undefined })
+  // Segregação (comércio) p/ a página "Receita por Atividade".
   const bcAtiv = comp.baseCalc
   const temSegAtiv = bcAtiv.recMonofasica > 0.005 || bcAtiv.recST > 0.005
   const pgComp = showComp ? 2 : 0
@@ -682,47 +680,45 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
           <div className="main"><div className="stack">
             <ClientBar cols={[clientCols[0], clientCols[1], clientCols[2], { k: "Atividades", v: String(ativs.length) }]} />
             <div className="sec" style={{ flex: 1 }}><Slab>Composição da receita</Slab>
-              <div className="fx gap16" style={{ flex: 1, minHeight: 0, alignItems: "stretch" }}>
-                <div className="panel f1 fx col ac" style={{ justifyContent: "center" }}>
-                  <Donut segs={ativSegs} total={ativRecTot} />
+              <div className="fx col" style={{ flex: 1, justifyContent: "center", gap: 15 }}>
+                {/* barra 100% empilhada */}
+                <div className="rbar">
+                  {ativs.map((a, i) => {
+                    const pct = ativRecTot > 0 ? (a.receita / ativRecTot) * 100 : 0
+                    return <div className="rbar-seg" key={i} style={{ width: `${pct.toFixed(2)}%`, background: COMP_COLORS[i % COMP_COLORS.length] }} title={`${atividadeCurta(a.descricao)} · ${pct.toFixed(1)}%`}>{pct >= 9 ? <span>{pct.toFixed(0).replace(".", ",")}%</span> : null}</div>
+                  })}
                 </div>
-                <div className="dcards" style={{ gridTemplateColumns: "1fr", flex: "none", width: 234 }}>
-                  {temSegAtiv ? (
-                    <>
-                      <MetricCard k="Receita bruta" v={fmtBRL(ativRecTot)} s={`soma de ${ativs.length} atividades`} />
-                      <MetricCard k="Revenda monofásica" v={fmtBRL(bcAtiv.recMonofasica)} s="PIS/COFINS zero na revenda" />
-                      <MetricCard k="Vendas em ST" v={fmtBRL(bcAtiv.recST)} s="ICMS recolhido na origem" />
-                    </>
-                  ) : (
-                    <>
-                      <MetricCard k="Receita bruta" v={fmtBRL(ativRecTot)} s={`soma de ${ativs.length} atividades`} />
-                      <MetricCard k="Maior atividade" v={`${(maiorAtiv.receita / (ativRecTot || 1) * 100).toFixed(0)}%`} s={maiorAtiv.descricao || "—"} />
-                      <MetricCard k={isSN ? "DAS total" : "Base IRPJ total"} v={fmtBRL(ativValTot)} s={isSN ? "oficial do PGDAS-D" : "presunção somada"} />
-                    </>
-                  )}
+                {/* lista de atividades (receita, participação e DAS/base) */}
+                <div className="alist">
+                  {ativs.map((a, i) => {
+                    const pct = ativRecTot > 0 ? (a.receita / ativRecTot) * 100 : 0
+                    return (
+                      <div className="ait" key={i}>
+                        <i className="ait-dot" style={{ background: COMP_COLORS[i % COMP_COLORS.length] }} />
+                        <div className="ait-x">
+                          <div className="ait-n">{atividadeCurta(a.descricao)}{a.substituicaoICMS ? <em className="atbl-tag">ST</em> : null}{a.monofasica ? <em className="atbl-tag">mono</em> : null}</div>
+                          <div className="ait-meta">{a.anexo || a.tipo || "—"} · {isSN ? "DAS" : "Base IRPJ"} {fmtBRL(a.valor)}</div>
+                        </div>
+                        <div className="ait-nums"><div className="ait-v">{fmtBRL(a.receita)}</div><div className="ait-p">{pct.toFixed(1).replace(".", ",")}%</div></div>
+                      </div>
+                    )
+                  })}
+                  <div className="ait tot">
+                    <div className="ait-x"><div className="ait-n">Total da receita</div><div className="ait-meta">{isSN ? "DAS oficial do PGDAS-D" : "Base presumida somada"} {fmtBRL(ativValTot)}</div></div>
+                    <div className="ait-nums"><div className="ait-v">{fmtBRL(ativRecTot)}</div><div className="ait-p">100%</div></div>
+                  </div>
                 </div>
-              </div>
-            </div>
-            <div className="sec"><Slab>{isSN ? "Receita e DAS por atividade" : "Receita e base presumida por atividade"}</Slab>
-              <div className="atbl">
-                <div className="atbl-h"><span>Atividade</span><span>{isSN ? "Anexo" : "Tipo"}</span><span className="r">Receita</span><span className="r">{isSN ? "DAS" : "Base IRPJ"}</span><span className="r">%</span></div>
-                {ativs.map((a, i) => {
-                  const pct = ativRecTot > 0 ? (a.receita / ativRecTot) * 100 : 0
-                  return (
-                    <div className="atbl-r" key={i}>
-                      <span className="atbl-d">{atividadeCurta(a.descricao)}{a.substituicaoICMS ? <em className="atbl-tag">ST</em> : null}{a.monofasica ? <em className="atbl-tag">mono</em> : null}<span className="atbl-share"><i style={{ width: `${pct.toFixed(1)}%` }} /></span></span>
-                      <span>{a.anexo || a.tipo || "—"}</span>
-                      <span className="r">{fmtBRL(a.receita)}</span>
-                      <span className="r">{fmtBRL(a.valor)}</span>
-                      <span className="r">{pct.toFixed(1).replace(".", ",")}%</span>
-                    </div>
-                  )
-                })}
-                <div className="atbl-t"><span>Total</span><span /><span className="r">{fmtBRL(ativRecTot)}</span><span className="r">{fmtBRL(ativValTot)}</span><span className="r">100%</span></div>
+                {temSegAtiv && (
+                  <div className="dcards" style={{ flex: "none" }}>
+                    <MetricCard k="Receita bruta" v={fmtBRL(ativRecTot)} s={`soma de ${ativs.length} atividades`} />
+                    <MetricCard k="Revenda monofásica" v={fmtBRL(bcAtiv.recMonofasica)} s="PIS/COFINS zero na revenda" />
+                    <MetricCard k="Vendas em ST" v={fmtBRL(bcAtiv.recST)} s="ICMS recolhido na origem" />
+                  </div>
+                )}
               </div>
               <div className="atbl-foot">{isSN
-                ? <>Total = valor <b>oficial do DAS</b> (PGDAS-D), já líquido de ICMS-ST e PIS/COFINS monofásico.</>
-                : <>Base presumida do IRPJ por atividade — o IRPJ/CSLL do mês somam as bases de cada uma.</>}</div>
+                ? <>Receita e participação por atividade. O <b>total do DAS</b> é o valor oficial do PGDAS-D, já líquido de ICMS-ST e PIS/COFINS monofásico.</>
+                : <>Receita e <b>base presumida</b> por atividade — o IRPJ/CSLL do mês somam as bases de cada uma.</>}</div>
             </div>
           </div>
             <Footer note={`Receita por atividade · Pág. ${pgAtiv} de ${totalPg}`} />
@@ -1025,6 +1021,22 @@ const STYLE = `
 .gn-doc .atbl-share i{display:block;height:100%;background:var(--gold-grad);border-radius:3px}
 .gn-doc .atbl-foot{margin-top:12px;font:400 9.5px/1.5 var(--font-plex);color:var(--muted)}
 .gn-doc .atbl-foot b{color:#6a4e12;font-weight:600}
+.gn-doc .rbar{display:flex;height:32px;border-radius:9px;overflow:hidden;border:1px solid var(--bd);background:var(--card)}
+.gn-doc .rbar-seg{display:flex;align-items:center;justify-content:center;min-width:2px;color:#fff;font:700 10px var(--font-jost);text-shadow:0 1px 1.5px rgba(0,0,0,.22);box-shadow:inset -1px 0 0 rgba(255,255,255,.35)}
+.gn-doc .alist{display:flex;flex-direction:column;border:1px solid var(--bd);border-radius:12px;overflow:hidden;background:var(--card)}
+.gn-doc .ait{display:flex;align-items:center;gap:13px;padding:12px 16px;border-top:1px solid var(--bd2)}
+.gn-doc .ait:first-child{border-top:none}
+.gn-doc .ait-dot{width:12px;height:12px;border-radius:4px;flex:none}
+.gn-doc .ait-x{flex:1;min-width:0}
+.gn-doc .ait-n{font:600 11.5px var(--font-plex);color:#334023;line-height:1.25}
+.gn-doc .ait-meta{font:400 9px var(--font-plex);color:var(--muted);margin-top:3px}
+.gn-doc .ait-nums{text-align:right;flex:none}
+.gn-doc .ait-v{font:700 13px var(--font-jost);color:var(--num);font-variant-numeric:tabular-nums}
+.gn-doc .ait-p{font:600 9.5px var(--font-jost);color:var(--gold);margin-top:2px}
+.gn-doc .ait.tot{background:#fbf8ee;border-top:2px solid var(--bd)}
+.gn-doc .ait.tot .ait-n{font:700 11.5px var(--font-jost);color:var(--num)}
+.gn-doc .ait.tot .ait-v{font-size:14.5px}
+.gn-doc .ait.tot .ait-p{color:var(--muted)}
 .gn-doc .obsbox{background:var(--card);border:1px solid var(--bd);border-radius:13px;padding:15px 17px;font:400 11px/1.65 var(--font-plex);color:#3a4530;white-space:pre-wrap}
 .gn-doc .gmwrap{border:1px solid var(--bd);border-radius:13px;overflow:hidden;background:var(--card)}
 .gn-doc .gmgrid{display:flex;flex-direction:column}
