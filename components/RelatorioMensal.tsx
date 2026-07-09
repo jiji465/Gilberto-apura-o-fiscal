@@ -286,6 +286,21 @@ function DtlRow({ l, sub, v, up }: { l: string; sub: string; v: string; up?: str
 function MetricCard({ k, v, s, up }: { k: string; v: string; s?: string; up?: string }) {
   return <div className="dcard"><div className="dc-k">{k}</div><div className="dc-v">{v}{up && <span className="dc-up">{up}</span>}</div>{s && <div className="dc-s">{s}</div>}</div>
 }
+// Barra dividida em parte tributável × parte já tributada na origem (monofásico no
+// PIS/COFINS, ST no ICMS). Reutilizada em dois enquadramentos: "Segregação da receita"
+// (fato, na página de atividades) e "Base de cálculo da projeção" (no comparativo LP).
+function SplitBar({ tag, tagCls, topLabel, base, baseW, excl, exclLabel, baseLegend, exclLegend }: { tag: string; tagCls?: string; topLabel: string; base: number; baseW: number; excl: number; exclLabel: string; baseLegend: string; exclLegend: string }) {
+  return (
+    <div className="dbx">
+      <div className="dbx-top"><span className={"dbx-tag" + (tagCls ? " " + tagCls : "")}>{tag}</span><span className="dbx-base">{topLabel}<b>{fmtBRL(base)}</b></span></div>
+      <div className="dbx-split">
+        {baseW >= 4 && <u className="dbx-b" style={{ width: `${baseW.toFixed(1)}%` }}>{baseW >= 32 ? fmtBRL(base) : `${baseW.toFixed(0)}%`}</u>}
+        <u className="dbx-x" style={{ width: `${(100 - baseW).toFixed(1)}%` }}>{exclLabel} · {fmtBRL(excl)}</u>
+      </div>
+      <div className="dbx-lg"><span><i className="dbx-di b" />{baseLegend}</span><span><i className="dbx-di x" />{exclLegend}</span></div>
+    </div>
+  )
+}
 function GoldEconomia({ economiaMes, sub, note }: { economiaMes: number; sub?: string; note?: React.ReactNode }) {
   return (
     <div className="goldpanel">
@@ -454,9 +469,12 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
   const showAtiv = ativs.length > 1
   const ativRecTot = ativs.reduce((s, a) => s + a.receita, 0)
   const ativValTot = ativs.reduce((s, a) => s + a.valor, 0)
-  // Segregação (comércio) p/ a página "Receita por Atividade".
+  // Segregação (comércio) p/ a página "Receita por Atividade": barras de base
+  // divididas em parte tributável × parte excluída (monofásico no PIS/COFINS, ST no ICMS).
   const bcAtiv = comp.baseCalc
   const temSegAtiv = bcAtiv.recMonofasica > 0.005 || bcAtiv.recST > 0.005
+  const pcBaseW = bcAtiv.receita > 0 ? Math.max(0, Math.min(100, (bcAtiv.basePisCofins / bcAtiv.receita) * 100)) : 0
+  const icmsBaseW = bcAtiv.receitaComercio > 0 ? Math.max(0, Math.min(100, (bcAtiv.baseICMS / bcAtiv.receitaComercio) * 100)) : 0
   const pgComp = showComp ? 2 : 0
   const pgAtiv = showAtiv ? 2 + (showComp ? 1 : 0) : 0
   const pgAgenda = 2 + (showComp ? 1 : 0) + (showAtiv ? 1 : 0)
@@ -661,7 +679,15 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
             </div>
             {(comp.baseCalc.recMonofasica > 0.005 || comp.baseCalc.recST > 0.005) && (
               <div className="sec"><Slab>Base de cálculo da projeção</Slab>
-                <BaseCalcCard bc={comp.baseCalc} />
+                <div className="segwrap">
+                  {comp.baseCalc.recMonofasica > 0.005 && (
+                    <SplitBar tag="PIS / COFINS" topLabel="Base de cálculo" base={comp.baseCalc.basePisCofins} baseW={pcBaseW} excl={comp.baseCalc.recMonofasica} exclLabel="Revenda monofásica" baseLegend="Base tributável" exclLegend="Monofásica — fora da base" />
+                  )}
+                  {comp.baseCalc.comercio && comp.baseCalc.recST > 0.005 && (
+                    <SplitBar tag="ICMS" tagCls="icms" topLabel="Base de cálculo" base={comp.baseCalc.baseICMS} baseW={icmsBaseW} excl={comp.baseCalc.recST} exclLabel="Vendas em ST" baseLegend="Base tributável" exclLegend="ST — fora da base" />
+                  )}
+                </div>
+                <div className="bcx-cap">Produtos <b>monofásicos</b> (PIS/COFINS) e em <b>substituição tributária</b> (ICMS) já foram tributados na origem — por isso saem da base da projeção do Lucro Presumido. O <b>IRPJ e a CSLL</b> presumem sobre a receita bruta total.</div>
               </div>
             )}
             <div className="sec" style={{ flex: 1 }}><Slab>Detalhamento tributo a tributo</Slab>
@@ -680,7 +706,7 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
           <div className="main"><div className="stack">
             <ClientBar cols={[clientCols[0], clientCols[1], clientCols[2], { k: "Atividades", v: String(ativs.length) }]} />
             <div className="sec" style={{ flex: 1 }}><Slab>Composição da receita</Slab>
-              <div className="fx col" style={{ flex: 1, justifyContent: "center", gap: 15 }}>
+              <div className="fx col" style={{ gap: 15 }}>
                 {/* barra 100% empilhada */}
                 <div className="rbar">
                   {ativs.map((a, i) => {
@@ -697,6 +723,7 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
                         <i className="ait-dot" style={{ background: COMP_COLORS[i % COMP_COLORS.length] }} />
                         <div className="ait-x">
                           <div className="ait-n">{atividadeCurta(a.descricao)}{a.substituicaoICMS ? <em className="atbl-tag">ST</em> : null}{a.monofasica ? <em className="atbl-tag">mono</em> : null}</div>
+                          <div className="ait-bar"><i style={{ width: `${pct.toFixed(1)}%`, background: COMP_COLORS[i % COMP_COLORS.length] }} /></div>
                           <div className="ait-meta">{a.anexo || a.tipo || "—"} · {isSN ? "DAS" : "Base IRPJ"} {fmtBRL(a.valor)}</div>
                         </div>
                         <div className="ait-nums"><div className="ait-v">{fmtBRL(a.receita)}</div><div className="ait-p">{pct.toFixed(1).replace(".", ",")}%</div></div>
@@ -709,10 +736,14 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
                   </div>
                 </div>
                 {temSegAtiv && (
-                  <div className="dcards" style={{ flex: "none" }}>
-                    <MetricCard k="Receita bruta" v={fmtBRL(ativRecTot)} s={`soma de ${ativs.length} atividades`} />
-                    <MetricCard k="Revenda monofásica" v={fmtBRL(bcAtiv.recMonofasica)} s="PIS/COFINS zero na revenda" />
-                    <MetricCard k="Vendas em ST" v={fmtBRL(bcAtiv.recST)} s="ICMS recolhido na origem" />
+                  <div className="segwrap">
+                    <div className="slab" style={{ marginBottom: 2 }}><span style={{ color: "var(--muted)", letterSpacing: ".16em" }}>Segregação da receita</span></div>
+                    {bcAtiv.recMonofasica > 0.005 && (
+                      <SplitBar tag="PIS / COFINS" topLabel="Tributável" base={bcAtiv.basePisCofins} baseW={pcBaseW} excl={bcAtiv.recMonofasica} exclLabel="Revenda monofásica" baseLegend="Receita tributável" exclLegend="Monofásica — tributada na origem" />
+                    )}
+                    {bcAtiv.comercio && bcAtiv.recST > 0.005 && (
+                      <SplitBar tag="ICMS" tagCls="icms" topLabel="Tributável" base={bcAtiv.baseICMS} baseW={icmsBaseW} excl={bcAtiv.recST} exclLabel="Vendas em ST" baseLegend="Receita tributável" exclLegend="ST — tributada na origem" />
+                    )}
                   </div>
                 )}
               </div>
@@ -1021,15 +1052,17 @@ const STYLE = `
 .gn-doc .atbl-share i{display:block;height:100%;background:var(--gold-grad);border-radius:3px}
 .gn-doc .atbl-foot{margin-top:12px;font:400 9.5px/1.5 var(--font-plex);color:var(--muted)}
 .gn-doc .atbl-foot b{color:#6a4e12;font-weight:600}
-.gn-doc .rbar{display:flex;height:32px;border-radius:9px;overflow:hidden;border:1px solid var(--bd);background:var(--card)}
+.gn-doc .rbar{display:flex;height:26px;border-radius:7px;overflow:hidden;border:1px solid var(--bd);background:var(--card)}
 .gn-doc .rbar-seg{display:flex;align-items:center;justify-content:center;min-width:2px;color:#fff;font:700 10px var(--font-jost);text-shadow:0 1px 1.5px rgba(0,0,0,.22);box-shadow:inset -1px 0 0 rgba(255,255,255,.35)}
 .gn-doc .alist{display:flex;flex-direction:column;border:1px solid var(--bd);border-radius:12px;overflow:hidden;background:var(--card)}
-.gn-doc .ait{display:flex;align-items:center;gap:13px;padding:12px 16px;border-top:1px solid var(--bd2)}
+.gn-doc .ait{display:flex;align-items:center;gap:13px;padding:13px 16px;border-top:1px solid var(--bd2)}
 .gn-doc .ait:first-child{border-top:none}
 .gn-doc .ait-dot{width:12px;height:12px;border-radius:4px;flex:none}
 .gn-doc .ait-x{flex:1;min-width:0}
 .gn-doc .ait-n{font:600 11.5px var(--font-plex);color:#334023;line-height:1.25}
-.gn-doc .ait-meta{font:400 9px var(--font-plex);color:var(--muted);margin-top:3px}
+.gn-doc .ait-meta{font:400 9px var(--font-plex);color:var(--muted);margin-top:7px}
+.gn-doc .ait-bar{height:8px;border-radius:5px;background:var(--bd2);overflow:hidden;margin-top:8px;max-width:340px}
+.gn-doc .ait-bar i{display:block;height:100%;border-radius:5px}
 .gn-doc .ait-nums{text-align:right;flex:none}
 .gn-doc .ait-v{font:700 13px var(--font-jost);color:var(--num);font-variant-numeric:tabular-nums}
 .gn-doc .ait-p{font:600 9.5px var(--font-jost);color:var(--gold);margin-top:2px}
@@ -1037,6 +1070,21 @@ const STYLE = `
 .gn-doc .ait.tot .ait-n{font:700 11.5px var(--font-jost);color:var(--num)}
 .gn-doc .ait.tot .ait-v{font-size:14.5px}
 .gn-doc .ait.tot .ait-p{color:var(--muted)}
+.gn-doc .segwrap{display:flex;flex-direction:column;gap:11px}
+.gn-doc .dbx{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:15px 17px}
+.gn-doc .dbx-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:11px}
+.gn-doc .dbx-tag{font:600 8.5px var(--font-jost);letter-spacing:.12em;text-transform:uppercase;color:var(--gold);background:#fbf6ea;border:1px solid #e6d6a8;border-radius:6px;padding:3px 9px}
+.gn-doc .dbx-tag.icms{color:#4f6b34;background:#eef2e6;border-color:#cddab8}
+.gn-doc .dbx-base{font:400 11px var(--font-plex);color:var(--muted)}
+.gn-doc .dbx-base b{font:700 15px var(--font-jost);color:var(--num);margin-left:6px;font-variant-numeric:tabular-nums}
+.gn-doc .dbx-split{height:34px;display:flex;border-radius:8px;overflow:hidden}
+.gn-doc .dbx-split u{display:flex;align-items:center;padding:0 12px;font:700 10.5px var(--font-jost);white-space:nowrap;overflow:hidden;font-variant-numeric:tabular-nums}
+.gn-doc .dbx-b{background:#5f7d40;color:#fff}
+.gn-doc .dbx-x{background:#e0cf9a;color:#6a4e12}
+.gn-doc .dbx-lg{display:flex;gap:20px;margin-top:10px;font:400 9.5px var(--font-plex);color:#56604a}
+.gn-doc .dbx-lg span{display:flex;align-items:center;gap:6px}
+.gn-doc .dbx-di{width:11px;height:11px;border-radius:3px}
+.gn-doc .dbx-di.b{background:#5f7d40}.gn-doc .dbx-di.x{background:#e0cf9a}
 .gn-doc .obsbox{background:var(--card);border:1px solid var(--bd);border-radius:13px;padding:15px 17px;font:400 11px/1.65 var(--font-plex);color:#3a4530;white-space:pre-wrap}
 .gn-doc .gmwrap{border:1px solid var(--bd);border-radius:13px;overflow:hidden;background:var(--card)}
 .gn-doc .gmgrid{display:flex;flex-direction:column}
