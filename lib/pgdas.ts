@@ -21,6 +21,8 @@ export interface PgdasAtividade {
   /** Receita das PARCELAS monofásicas da atividade (PIS/COFINS zero) — precisão por
    *  parcela: uma atividade pode ter parcelas ST, monofásicas ou as duas. */
   receitaMonofasica: string
+  /** Receita das PARCELAS em ICMS-ST (ICMS já recolhido, sem débito próprio). */
+  receitaST: string
 }
 
 export interface PgdasSegregacao {
@@ -164,24 +166,28 @@ export function parsePGDAS(raw: string): PgdasResult | null {
     const recM = b.match(/Receita\s+Bruta\s+Informada[:\s]*R?\$?\s*([\d.]+,\d{2})/i)
     const subST = /Com\s+substitui[çc][ãa]o\s+tribut[áa]ria/i.test(descricao) || /Substitui[çc][ãa]o\s+tribut[áa]ria\s+de:\s*ICMS/i.test(b)
     const mono = /Tributa[çc][ãa]o\s+monof[áa]sica\s+de:/i.test(b)
-    // Segregação POR PARCELA: cada parcela pode ser ST, monofásica ou as duas. Soma a
-    // receita só das parcelas monofásicas (PIS/COFINS zero no LP também) — assim uma
-    // atividade parte-ST/parte-monofásica não exclui a parte que ainda paga PIS/COFINS.
-    let recMonoParc = 0, temParcela = false
+    // Segregação POR PARCELA: cada parcela pode ser ST, monofásica ou as duas. Soma
+    // separadamente a receita das parcelas monofásicas (PIS/COFINS zero) e das em ST (ICMS
+    // já recolhido, sem débito) — assim uma atividade parte-ST/parte-monofásica não exclui
+    // demais de nenhuma das bases.
+    let recMonoParc = 0, recStParc = 0, temParcela = false
     for (const seg of b.split(/Parcela\s+\d+\s*:/i).slice(1)) {
       const vm = seg.match(/R?\$?\s*([\d.]+,\d{2})/)
       if (!vm) continue
       temParcela = true
-      if (/Tributa[çc][ãa]o\s+monof[áa]sica\s+de:/i.test(seg)) recMonoParc += parseBR(vm[1])
+      const val = parseBR(vm[1])
+      if (/Tributa[çc][ãa]o\s+monof[áa]sica\s+de:/i.test(seg)) recMonoParc += val
+      if (/Substitui[çc][ãa]o\s+tribut[áa]ria\s+de:/i.test(seg)) recStParc += val
     }
     const receitaBruta = recM ? recM[1] : ""
-    // Fallback: sem parcelas itemizadas mas bloco marcado monofásico → receita toda.
+    // Fallback: sem parcelas itemizadas mas bloco marcado → receita toda.
     const receitaMonofasica = fmtNum(temParcela ? recMonoParc : (mono ? parseBR(receitaBruta) : 0))
+    const receitaST = fmtNum(temParcela ? recStParc : (subST ? parseBR(receitaBruta) : 0))
     // Anexo da atividade pela repartição: ISS→serviços, IPI→indústria (II), ICMS→comércio (I).
     // Serviço: se o extrato já indicou Anexo IV ou V (Fator R), respeita; senão III.
     const anexoServ = f.anexo === "Anexo IV" || f.anexo === "Anexo V" ? f.anexo : "Anexo III"
     const anexo = parseBR(rp.repart.ISS) > 0 ? anexoServ : parseBR(rp.repart.IPI) > 0 ? "Anexo II" : parseBR(rp.repart.ICMS) > 0 ? "Anexo I" : undefined
-    atividades.push({ descricao, receita: receitaBruta, repart: rp.repart, total: rp.total, substituicaoICMS: subST, monofasica: mono, anexo, receitaMonofasica })
+    atividades.push({ descricao, receita: receitaBruta, repart: rp.repart, total: rp.total, substituicaoICMS: subST, monofasica: mono, anexo, receitaMonofasica, receitaST })
   }
 
   if (!official) {

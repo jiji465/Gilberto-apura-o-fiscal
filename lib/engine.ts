@@ -648,16 +648,16 @@ export function simularComparativo(cd: ClientData, ap: Apuracao, params: Paramet
   const ativComparativo = isSN ? ativDoAnexo(cd.anexo) : cd.atividade
   const ehServico = ativComparativo === "Serviços"
   // ICMS do lado Lucro Presumido (comércio/indústria): usa o ICMS real digitado se a
-  // empresa já é LP; senão ESTIMA pela ALÍQUOTA EFETIVA informada sobre o faturamento do
-  // comércio. Essa % já é o resultado líquido (débito das vendas − crédito das compras)
-  // ÷ faturamento — por isso NÃO se desconta a ST de novo (a % já a considera).
+  // empresa já é LP; senão ESTIMA pela ALÍQUOTA EFETIVA informada sobre as vendas
+  // TRIBUTÁVEIS — a receita em ICMS-ST é excluída (já recolhida antes, sem débito próprio).
   const ativsCmp = cd.atividades || []
   const recComercio = ativsCmp.length
     ? ativsCmp.filter((a) => (a.tipo || ativDoAnexo(a.anexo)) !== "Serviços").reduce((s, a) => s + parseBR(a.receita), 0)
     : (ehServico ? 0 : ap.revenue)
-  // ICMS baseado na receita de COMÉRCIO (das atividades), não no anexo único — assim uma
-  // empresa mista (anexo "principal" III + atividade de comércio) também projeta o ICMS.
-  const icmsLP = isLP && parseBR(cd.icmsRecolher) > 0 ? parseBR(cd.icmsRecolher) : recComercio * (parseBR(cd.icmsCompPct) / 100)
+  // Receita em ST (por parcela quando disponível; senão a atividade inteira se marcada).
+  const recST = ativsCmp.reduce((s, a) => s + (a.receitaST ? parseBR(a.receitaST) : (a.substituicaoICMS ? parseBR(a.receita) : 0)), 0)
+  const baseICMS = Math.max(0, recComercio - recST)
+  const icmsLP = isLP && parseBR(cd.icmsRecolher) > 0 ? parseBR(cd.icmsRecolher) : baseICMS * (parseBR(cd.icmsCompPct) / 100)
   const apS = isSN ? ap : computeApuracao({ ...base, regime: "Simples Nacional", anexo: cd.anexo || "Anexo III" }, params)
   const apP = isLP ? ap : computeApuracao({ ...base, regime: "Lucro Presumido", atividade: ativComparativo, icmsRecolher: fmtNum(icmsLP) }, params)
 
@@ -675,13 +675,13 @@ export function simularComparativo(cd: ClientData, ap: Apuracao, params: Paramet
   const totalPresumido = linhas.reduce((s, l) => s + l.presumido, 0)
   // Serviços: comparativo 100% derivável (ISS conhecido). Comércio/indústria: só é
   // simulável quando há ICMS p/ o lado Presumido (real, se LP, ou estimado por %).
-  const icmsOk = recComercio <= 0 || (isLP ? parseBR(cd.icmsRecolher) > 0 : parseBR(cd.icmsCompPct) > 0)
+  const icmsOk = baseICMS <= 0 || (isLP ? parseBR(cd.icmsRecolher) > 0 : parseBR(cd.icmsCompPct) > 0)
   const dadosOk = isSN ? totalPresumido > 0 : parseBR(cd.rbt12) > 0 && totalSimples > 0
   const simulavel = icmsOk && dadosOk
   return {
     linhas, totalSimples, totalPresumido,
     economia: Math.abs(totalSimples - totalPresumido),
     melhor: totalSimples <= totalPresumido ? "Simples Nacional" : "Lucro Presumido",
-    atual, simulavel, estimado: recComercio > 0 && !(isLP && parseBR(cd.icmsRecolher) > 0),
+    atual, simulavel, estimado: baseICMS > 0 && !(isLP && parseBR(cd.icmsRecolher) > 0),
   }
 }

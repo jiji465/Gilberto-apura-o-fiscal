@@ -116,6 +116,8 @@ export interface AtividadeLinha {
   monofasica?: boolean
   /** Receita das parcelas monofásicas da atividade (PIS/COFINS zero) — precisão por parcela. */
   receitaMonofasica?: string
+  /** Receita das parcelas em ICMS-ST (ICMS já recolhido, sem débito próprio). */
+  receitaST?: string
 }
 
 export interface ExtraTax {
