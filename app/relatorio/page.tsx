@@ -289,7 +289,7 @@ export default function RelatorioPage() {
     // Múltiplas atividades: popula a tabela por atividade (senão limpa → atividade única).
     const multiAtiv = (res.atividades?.length || 0) > 1
     const novasAtiv: AtividadeLinha[] | undefined = multiAtiv
-      ? res.atividades.map((a) => ({ id: uid(), descricao: a.descricao || "", receita: a.receita || "", anexo: (a.anexo as Anexo) || undefined, dasAtividade: a.total || "", substituicaoICMS: a.substituicaoICMS, monofasica: a.monofasica, receitaMonofasica: a.receitaMonofasica }))
+      ? res.atividades.map((a) => ({ id: uid(), descricao: a.descricao || "", receita: a.receita || "", anexo: (a.anexo as Anexo) || undefined, dasAtividade: a.total || "", substituicaoICMS: a.substituicaoICMS, monofasica: a.monofasica, receitaMonofasica: a.receitaMonofasica, receitaST: a.receitaST }))
       : undefined
     setCd((p) => ({
       ...p,
@@ -431,9 +431,9 @@ export default function RelatorioPage() {
                 <p className="text-sm text-[var(--muted)]">{temComercio ? <>Para projetar o comércio, informe o <b>ICMS efetivo (%)</b> abaixo.</> : "Informe o faturamento (ou importe o PGDAS-D) para ver a projeção."}</p>
               )}
               {temComercio && (
-                <label className="block mt-3 max-w-sm"><span className="label">ICMS efetivo (%) <span className="text-[var(--muted)] font-normal">— (débito das vendas − crédito das compras) ÷ faturamento</span></span>
-                  <input className="input" value={cd.icmsCompPct ?? ""} onChange={(e) => upd("icmsCompPct", e.target.value)} placeholder="ex.: 3,5" />
-                  <span className="mt-1 block text-[11px] leading-snug text-[var(--muted)]">Aplicado sobre o faturamento do comércio. Use o líquido do SPED (já considera créditos e ST).</span></label>
+                <label className="block mt-3 max-w-sm"><span className="label">ICMS efetivo (%) <span className="text-[var(--muted)] font-normal">— sobre as vendas tributáveis (fora ST)</span></span>
+                  <input className="input" value={cd.icmsCompPct ?? ""} onChange={(e) => upd("icmsCompPct", e.target.value)} placeholder="ex.: 5" />
+                  <span className="mt-1 block text-[11px] leading-snug text-[var(--muted)]">Alíquota (ICMS a recolher ÷ vendas tributáveis). A parte em ST é <b>excluída automaticamente</b> do PGDAS-D. Estimativa — confira no SPED.</span></label>
               )}
             </div>
           )}
