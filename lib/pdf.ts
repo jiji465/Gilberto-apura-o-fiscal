@@ -3,7 +3,10 @@
 // Utilitários de PDF (somente client-side; libs carregadas sob demanda).
 //   • lerTextoPGDAS: extrai o texto de um PDF do PGDAS-D (pdfjs-dist).
 //   • exportRelatorioPDF: captura as folhas `.sheet` do relatório na tela e
-//     monta um PDF A4 (jspdf + html2canvas).
+//     monta um PDF A4 (jspdf + html2canvas-pro).
+// Nota: este PDF é RASTER (imagem por página) — fiel ao design, porém sem texto
+// selecionável. Para PDF vetorial/selecionável, use "Imprimir / PDF" (window.print
+// + @media print @page). Aqui priorizamos nitidez: escala 2 + PNG (sem artefato JPEG).
 
 export function safeFilename(name: string): string {
   return name.replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim() || "Relatorio Fiscal"
@@ -28,7 +31,7 @@ export async function lerTextoPGDAS(file: File): Promise<string> {
 }
 
 async function buildRelatorioPDF() {
-  const [{ jsPDF }, html2canvasMod] = await Promise.all([import("jspdf"), import("html2canvas")])
+  const [{ jsPDF }, html2canvasMod] = await Promise.all([import("jspdf"), import("html2canvas-pro")])
   const html2canvas = (html2canvasMod as any).default || html2canvasMod
 
   const root = document.getElementById("rep-overlay")
@@ -49,14 +52,16 @@ async function buildRelatorioPDF() {
     for (let i = 0; i < sheets.length; i++) {
       let canvas: HTMLCanvasElement
       try {
-        canvas = await html2canvas(sheets[i], { scale: 1.6, useCORS: true, backgroundColor: "#ffffff", logging: false })
+        canvas = await html2canvas(sheets[i], { scale: 2, useCORS: true, backgroundColor: "#ffffff", logging: false })
       } catch (e) {
         throw new Error(`Falha ao renderizar a página ${i + 1} de ${sheets.length}.`)
       }
-      const img = canvas.toDataURL("image/jpeg", 0.92)
+      // PNG (lossless) → texto/linhas nítidos, sem artefato de JPEG. compress:true
+      // no jsPDF aplica deflate na imagem, então o arquivo continua enxuto.
+      const img = canvas.toDataURL("image/png")
       const imgH = (canvas.height * pageW) / canvas.width
       if (i > 0) pdf.addPage()
-      pdf.addImage(img, "JPEG", 0, 0, pageW, Math.min(imgH, pageH))
+      pdf.addImage(img, "PNG", 0, 0, pageW, Math.min(imgH, pageH), undefined, "MEDIUM")
       // libera memória do canvas (importante com muitas páginas)
       canvas.width = 0
       canvas.height = 0
