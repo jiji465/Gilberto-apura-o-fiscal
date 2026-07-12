@@ -2,7 +2,7 @@
 // Simples Anexos I–V com Fator R, Lucro Presumido/Real, MEI, retenções e
 // simulação de regime para a comparação de economia. Monetários em string pt-BR.
 import { parseBR, fmtNum } from "./format"
-import { PARAMETROS_PADRAO, type ParametrosFiscais } from "./config"
+import { PARAMETROS_PADRAO, difalMASNPercent, type ParametrosFiscais } from "./config"
 import type { Apuracao, ApuracaoAtividade, Atividade, ClientData, Economia, LpInfo, MeiInfo, RepartItem, SnInfo, TaxRow } from "./types"
 
 /** Conversões entre anexo (Simples) e tipo de atividade (Lucro Presumido). */
@@ -170,16 +170,50 @@ export const meiComposicao = (categoria: string, das: number): RepartItem[] => {
 }
 
 /* ===== Vencimentos ===== */
+// Domingo de Páscoa (algoritmo de Meeus/Jones/Butcher) — base dos feriados móveis.
+function pascoa(year: number): Date {
+  const a = year % 19, b = Math.floor(year / 100), c = year % 100
+  const d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25)
+  const g = Math.floor((b - f + 1) / 3)
+  const h = (19 * a + b - d - g + 15) % 30
+  const i = Math.floor(c / 4), k = c % 4
+  const l = (32 + 2 * e + 2 * i - h - k) % 7
+  const mm = Math.floor((a + 11 * h + 22 * l) / 451)
+  const mes = Math.floor((h + l - 7 * mm + 114) / 31)
+  const dia = ((h + l - 7 * mm + 114) % 31) + 1
+  return new Date(year, mes - 1, dia)
+}
+const mmdd = (dt: Date) => `${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`
+const _feriadosCache: Record<number, Set<string>> = {}
+/** Feriados nacionais do ano como "MM-DD". Fixos (Lei 662/1949, 6.802, 14.759/2023) +
+ *  Sexta-feira Santa (feriado nacional) + Carnaval seg/ter e Corpus Christi (ponto
+ *  facultativo bancário — bancos não processam, então DAS/DARF também deslocam). */
+export function feriadosNacionais(year: number): Set<string> {
+  if (_feriadosCache[year]) return _feriadosCache[year]
+  const fixos = ["01-01", "04-21", "05-01", "09-07", "10-12", "11-02", "11-15", "11-20", "12-25"]
+  const p = pascoa(year)
+  const desloca = (dias: number) => { const dt = new Date(p); dt.setDate(dt.getDate() + dias); return mmdd(dt) }
+  const moveis = [desloca(-2), desloca(-48), desloca(-47), desloca(60)] // Sexta Santa, Carnaval (seg/ter), Corpus Christi
+  const set = new Set([...fixos, ...moveis])
+  _feriadosCache[year] = set
+  return set
+}
+/** Dia sem expediente: sábado, domingo ou feriado nacional. */
+const ehDiaNaoUtil = (dt: Date): boolean =>
+  dt.getDay() === 0 || dt.getDay() === 6 || feriadosNacionais(dt.getFullYear()).has(mmdd(dt))
+
 const lastBizDay = (m: number, y: number): number => {
   const d = new Date(y, m, 0)
-  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1)
+  while (ehDiaNaoUtil(d)) d.setDate(d.getDate() - 1)
   return d.getDate()
 }
+// Ajusta um vencimento que cai em dia não útil: "next" PRORROGA (DAS/DAS-MEI),
+// "prev" ANTECIPA (demais). Laço p/ pular fins de semana + feriados encadeados
+// (ex.: sexta-feira feriado seguida de fim de semana).
 export const adjustWeekend = (y: number, m: number, d: number, mode: "next" | "prev"): Date => {
   const dt = new Date(y, m - 1, d)
-  const wd = dt.getDay()
-  if (wd === 6) dt.setDate(dt.getDate() + (mode === "prev" ? -1 : 2))
-  else if (wd === 0) dt.setDate(dt.getDate() + (mode === "prev" ? -2 : 1))
+  const passo = mode === "prev" ? -1 : 1
+  while (ehDiaNaoUtil(dt)) dt.setDate(dt.getDate() + passo)
   return dt
 }
 export const dueDate = (compMonth?: string, compYear?: string, tax = ""): string => {
@@ -288,6 +322,30 @@ export function computeApuracao(cd: ClientData, params: ParametrosFiscais = PARA
           : parseBR(a.receita) * (calcSN(rbt12, ax).rate / 100)
         return { descricao: a.descricao || ax, receita: parseBR(a.receita), anexo: ax, valor: dasA, substituicaoICMS: a.substituicaoICMS, monofasica: a.monofasica }
       })
+    }
+
+    // ---------- ICMS DIFAL (compras interestaduais — MA, Lei 8.948/2009) ----------
+    // Antecipação do diferencial de alíquota sobre AQUISIÇÕES interestaduais: percentual
+    // por faixa de RBT12 aplicado ao valor das compras. Só comércio/indústria (aquisição
+    // p/ revenda/industrialização), inclusive empresa mista. É custo do Simples: entra na
+    // carga efetiva; no comparativo, aparece só no lado Simples (o LP não paga esse DIFAL).
+    const comprasInter = parseBR(cd.comprasInterestaduais)
+    const temComIndSN = atividade !== "Serviços" || atividadesIn.some((a) => {
+      const ax = a.anexo || anexoDoTipo(a.tipo)
+      return ax === "Anexo I" || ax === "Anexo II"
+    })
+    if (comprasInter > 0 && temComIndSN) {
+      const pctDifal = difalMASNPercent(rbt12)
+      if (pctDifal && pctDifal > 0) {
+        const difal = comprasInter * (pctDifal / 100)
+        taxes.push({
+          tax: "ICMS DIFAL", base: fmtNum(comprasInter), rate: pctDifal.toFixed(2).replace(".", ","),
+          apurado: fmtNum(difal), retido: "", value: fmtNum(difal),
+          dueDate: dueDate(cd.compMonth, cd.compYear, "ICMS"),
+          obs: `Antecipação s/ compras interestaduais • ${pctDifal.toFixed(2).replace(".", ",")}% (RBT12) • MA Lei 8.948/2009`,
+          group: "ICMS",
+        })
+      }
     }
   }
 

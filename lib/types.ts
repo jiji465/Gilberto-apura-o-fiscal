@@ -60,6 +60,9 @@ export interface ClientData {
   /** ICMS efetivo (% sobre vendas, líquido de créditos) usado p/ ESTIMAR o lado
    *  Lucro Presumido no comparativo de comércio/indústria (o sistema não tem as entradas). */
   icmsCompPct?: string
+  /** Simples (MA): total de compras interestaduais no mês — base do DIFAL/antecipação
+   *  (Lei 8.948/2009), cujo percentual sai da faixa de RBT12. Serviço puro não usa. */
+  comprasInterestaduais?: string
   equipHospitalar?: boolean
   /** Receita por atividade (empresas com mais de uma atividade). Vazio/ausente ⇒
    *  atividade única (usa `revenue`/`anexo`/`atividade`). No Simples, autopreenchido
