@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
-import { FileText, Calculator, Upload, Sparkles, Trash2, Download, Printer, Scale, Plus, ListPlus, ChevronDown } from "lucide-react"
+import { FileText, Calculator, Upload, Sparkles, Trash2, Download, Printer, Scale, Plus, ListPlus, ChevronDown, FileDown, FileUp } from "lucide-react"
 import { computeApuracao, calcEconomia, simularComparativo, MEI_CATEGORIAS, MEI_DAS_2026 } from "@/lib/engine"
 import { fmtBRL, fmtNum, fmtCNPJ, fmtPct, maskBRL, parseBR, MONTHS } from "@/lib/format"
 import { parsePGDAS } from "@/lib/pgdas"
@@ -355,6 +355,32 @@ export default function RelatorioPage() {
     } catch (e) { console.error(e); toastError((e instanceof Error && e.message ? e.message + " " : "") + "Não consegui gerar o PDF. Use 'Imprimir / PDF'.") }
     setExporting(false)
   }
+  // Exportar/importar a competência como JSON — backup e "reabrir mês" sem banco.
+  function exportarCompetencia() {
+    try {
+      const blob = new Blob([JSON.stringify(cd, null, 2)], { type: "application/json" })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = safeFilename(`Competencia - ${cd.clientName || "Empresa"}${compFile() ? " - " + compFile() : ""}`) + ".json"
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+      toastSuccess("Competência exportada (JSON).")
+    } catch (e) { console.error(e); toastError("Não consegui exportar a competência.") }
+  }
+  async function importarCompetencia(file?: File | null) {
+    if (!file) return
+    try {
+      const data = JSON.parse(await file.text())
+      if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("formato inválido")
+      const next = { ...blank(), ...(data as ClientData) }
+      setCd(next)
+      saveDraft(next)
+      toastSuccess("Competência importada.")
+    } catch (e) { console.error(e); toastError("Arquivo inválido — importe um JSON gerado por este sistema.") }
+  }
   const retEligible = ap.taxes.filter((t) => !t.manual && ["IRPJ", "CSLL", "PIS", "COFINS", "ISS", "DAS"].includes(t.tax))
   const dasOk = cd.dasOfficial && ap.sn ? Math.abs(ap.sn.das - parseBR(cd.dasOfficial)) <= 0.05 : false
 
@@ -367,6 +393,8 @@ export default function RelatorioPage() {
         </div>
         <div className="flex flex-wrap gap-2 justify-end">
           {(isWide || tab === "editar") && <button className="btn btn-outline" onClick={limparTudo} title="Apaga o rascunho e recomeça"><Trash2 className="h-4 w-4" /> Limpar</button>}
+          {(isWide || tab === "editar") && <button className="btn btn-outline" onClick={exportarCompetencia} title="Baixar os dados desta competência (JSON) para backup"><FileDown className="h-4 w-4" /> Exportar</button>}
+          {(isWide || tab === "editar") && <label className="btn btn-outline cursor-pointer" title="Carregar uma competência salva (JSON)"><FileUp className="h-4 w-4" /> Importar<input type="file" accept="application/json,.json" className="hidden" onChange={(e) => { importarCompetencia(e.target.files?.[0]); e.currentTarget.value = "" }} /></label>}
           {(isWide || tab === "visualizar") && <button className="btn btn-outline" disabled={exporting} onClick={baixarPdf}><Download className="h-4 w-4" /> {exporting ? "Gerando…" : "Baixar PDF"}</button>}
           {(isWide || tab === "visualizar") && <button className="btn btn-gold" onClick={() => window.print()}><Printer className="h-4 w-4" /> Imprimir / PDF</button>}
         </div>
@@ -461,7 +489,7 @@ export default function RelatorioPage() {
           {/* 2 · Regime & Enquadramento */}
           <Section n={2} title="Regime & Enquadramento" open={!!openSec[2]} onToggle={() => toggleSec(2)}
             subtitle={cd.regime + (isSN && cd.anexo ? ` · ${cd.anexo}` : isMEI && cd.meiCategoria ? ` · ${cd.meiCategoria}` : cd.atividade ? ` · ${cd.atividade}` : "")}>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <label className="block"><span className="label">Regime tributário</span>
                 <select className="input" value={cd.regime} onChange={(e) => upd("regime", e.target.value)}>
                   {REGIMES.map((r) => <option key={r} value={r}>{r}</option>)}
@@ -482,11 +510,11 @@ export default function RelatorioPage() {
                   </span></label>
               )}
               {isSN && cd.atividade !== "Serviços" && (
-                <div><span className="label">Anexo</span>
+                <div className="md:col-span-2"><span className="label">Anexo</span>
                   <div className="input flex items-center bg-[#f7f5ef] text-[var(--muted)] cursor-default">{cd.anexo} — {cd.atividade}</div></div>
               )}
               {isSN && cd.sujeitoFatorR && (
-                <label className="block"><span className="label">Folha + pró-labore 12m <span className="text-[var(--muted)] font-normal">(Fator R)</span></span>
+                <label className="block md:col-span-2"><span className="label">Folha + pró-labore 12m <span className="text-[var(--muted)] font-normal">(Fator R)</span></span>
                   <Money value={cd.folha12m} onChange={(v) => upd("folha12m", v)} /></label>
               )}
               {isMEI && (
@@ -496,7 +524,7 @@ export default function RelatorioPage() {
                       <option value="">Selecione…</option>
                       {MEI_CATEGORIAS.map((c) => <option key={c} value={c}>{c}</option>)}
                     </select></label>
-                  <label className="block"><span className="label">DAS-MEI do mês (R$)</span>
+                  <label className="block md:col-span-2"><span className="label">DAS-MEI do mês (R$)</span>
                     <Money value={cd.meiDasFixo} onChange={(v) => upd("meiDasFixo", v)} /></label>
                 </>
               )}
@@ -520,7 +548,7 @@ export default function RelatorioPage() {
           {/* 3 · Faturamento */}
           <Section n={3} title="Faturamento" open={!!openSec[3]} onToggle={() => toggleSec(3)}
             subtitle={ap.revenue > 0 ? `Receita do mês ${fmtBRL(ap.revenue)}` : "Receita do mês e acumulado 12m"}>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 gap-4">
               <label className="block"><span className="label">Faturamento do mês (R$){temAtivReceita ? " — soma das atividades" : ""}</span>
                 {temAtivReceita
                   ? <div className="input flex items-center bg-[#f7f5ef] text-[var(--muted)] cursor-default tabular-nums">{fmtBRL(ap.revenue)}</div>
@@ -528,17 +556,29 @@ export default function RelatorioPage() {
               {isSN && <label className="block"><span className="label">Faturamento acum. 12m <span className="text-[var(--muted)] font-normal">(RBT12)</span></span>
                 <Money value={cd.rbt12} onChange={(v) => upd("rbt12", v)} />
                 {parseBR(cd.rbt12) <= 0 && ap.revenue > 0 && <span className="mt-1 block text-[11px] leading-snug text-amber-600">Sem RBT12: usando <b>receita × 12</b> como estimativa — informe o acumulado 12m para a faixa/DAS ficarem exatos.</span>}</label>}
+              {isSN && (cd.atividade !== "Serviços" || (cd.atividades || []).some((a) => a.anexo === "Anexo I" || a.anexo === "Anexo II")) && (
+                <label className="block"><span className="label">Compras interestaduais no mês (R$) <span className="text-[var(--muted)] font-normal">— DIFAL/antecipação MA</span></span>
+                  <Money value={cd.comprasInterestaduais} onChange={(v) => upd("comprasInterestaduais", v)} />
+                  {(() => {
+                    const d = ap.taxes.find((t) => t.tax === "ICMS DIFAL")
+                    if (d) return <span className="mt-1 block text-[11px] leading-snug text-emerald-700">→ DIFAL de <b>{fmtBRL(parseBR(d.value))}</b> ({d.rate}% do RBT12) — entra como custo do Simples (Lei 8.948/2009).</span>
+                    if (parseBR(cd.comprasInterestaduais) > 0 && ap.sn && ap.sn.rbt12 > 3_600_000) return <span className="mt-1 block text-[11px] leading-snug text-amber-600">RBT12 acima de R$ 3,6 mi: usa a diferença de alíquota cheia — informe o DIFAL manualmente em “Impostos a recolher”.</span>
+                    if (parseBR(cd.comprasInterestaduais) > 0 && ap.sn && ap.sn.rbt12 <= 120000) return <span className="mt-1 block text-[11px] leading-snug text-[var(--muted)]">RBT12 até R$ 120 mil: isento de DIFAL nas compras interestaduais.</span>
+                    return null
+                  })()}</label>
+              )}
               {isLP && <label className="block"><span className="label">Receita do trimestre <span className="text-[var(--muted)] font-normal">(base IRPJ/CSLL)</span></span>
                 <Money value={cd.receitaTrimestre} onChange={(v) => upd("receitaTrimestre", v)} />
                 <span className="mt-1 block text-[11px] leading-snug text-[var(--muted)]">IRPJ/CSLL são trimestrais. Vazio = usa receita do mês × 3. Preencha para a provisão ficar exata.</span></label>}
               {!isMEI && cd.atividade === "Serviços" && (
-                <label className="block"><span className="label">Alíquota ISS (%){isSN ? " — p/ comparativo" : ""}</span>
-                  <input className="input" value={cd.issRate ?? ""} onChange={(e) => upd("issRate", e.target.value)} placeholder={String(params.issPadrao).replace(".", ",")} /></label>
+                <label className="block"><span className="label">Alíquota ISS (%) <span className="text-[var(--muted)] font-normal">{isSN ? "— só p/ comparativo de regimes" : "— imposto do mês (a recolher)"}</span></span>
+                  <input className="input" value={cd.issRate ?? ""} onChange={(e) => upd("issRate", e.target.value)} placeholder={String(params.issPadrao).replace(".", ",")} />
+                  {isSN && <span className="mt-1 block text-[11px] leading-snug text-[var(--muted)]">No Simples o ISS já está dentro do DAS — este valor serve apenas para simular o Lucro Presumido.</span>}</label>
               )}
               {!isMEI && !isSN && cd.atividade !== "Serviços" && (
-                <label className="block"><span className="label">ICMS efetivo (%) <span className="text-[var(--muted)] font-normal">— p/ comparativo</span></span>
+                <label className="block"><span className="label">ICMS efetivo (%) <span className="text-[var(--muted)] font-normal">— só p/ comparativo de regimes</span></span>
                   <input className="input" value={cd.icmsCompPct ?? ""} onChange={(e) => upd("icmsCompPct", e.target.value)} placeholder="ex.: 7" />
-                  <span className="mt-1 block text-[11px] leading-snug text-[var(--muted)]">ICMS sobre vendas, líquido dos créditos de entrada — estima o Lucro Presumido no comparativo.</span></label>
+                  <span className="mt-1 block text-[11px] leading-snug text-[var(--muted)]">Alíquota sobre vendas (líquida de créditos) para estimar o comparativo. <b>Não é o ICMS a recolher</b> — esse vai em “Impostos a recolher”.</span></label>
               )}
               <label className="block"><span className="label">Nº de notas emitidas <span className="text-[var(--muted)] font-normal">(ticket médio)</span></span>
                 <input className="input" inputMode="numeric" value={cd.numNotas || ""} onChange={(e) => upd("numNotas", e.target.value.replace(/\D/g, ""))} placeholder="ex.: 312" /></label>
@@ -581,19 +621,17 @@ export default function RelatorioPage() {
           {!isMEI && (
             <Section n={4} title="Folha & Pró-labore" open={!!openSec[4]} onToggle={() => toggleSec(4)}
               subtitle={(() => { const f = parseBR(cd.folhaMensal), pl = parseBR(cd.proLabore); return (f > 0 || pl > 0) ? [f > 0 ? `Folha ${fmtBRL(f)}` : "", pl > 0 ? `Pró-labore ${fmtBRL(pl)}` : ""].filter(Boolean).join(" · ") : "Salários, pró-labore e retenções (opcional)" })()}>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <label className="block"><span className="label">Folha de salários do mês (R$)</span>
                   <Money value={cd.folhaMensal} onChange={(v) => upd("folhaMensal", v)} /></label>
                 <label className="block"><span className="label">Pró-labore do mês (R$)</span>
                   <Money value={cd.proLabore} onChange={(v) => upd("proLabore", v)} /></label>
-                {parseBR(cd.proLabore) > 0 && <label className="block"><span className="label">Dependentes <span className="text-[var(--muted)] font-normal">(IRRF)</span></span>
+                {parseBR(cd.proLabore) > 0 && <label className="block md:col-span-2"><span className="label">Dependentes <span className="text-[var(--muted)] font-normal">(IRRF)</span></span>
                   <input className="input" inputMode="numeric" value={cd.proLaboreDeps || ""} onChange={(e) => upd("proLaboreDeps", e.target.value.replace(/\D/g, ""))} placeholder="0" /></label>}
                 <label className="block"><span className="label">INSS retido dos empregados (R$)</span>
                   <Money value={cd.inssRetidoFolha} onChange={(v) => upd("inssRetidoFolha", v)} /></label>
                 <label className="block"><span className="label">IRRF retido da folha (R$)</span>
                   <Money value={cd.irrfFolha} onChange={(v) => upd("irrfFolha", v)} /></label>
-                {isLP && cd.atividade !== "Serviços" && <label className="block"><span className="label">ICMS a recolher (R$)</span>
-                  <Money value={cd.icmsRecolher} onChange={(v) => upd("icmsRecolher", v)} /></label>}
               </div>
               {isLP && cd.atividade === "Serviços" && (
                 <label className="mt-4 flex items-center gap-3 rounded-lg border border-[var(--line)] p-3 cursor-pointer bg-emerald-50/60">
@@ -605,8 +643,12 @@ export default function RelatorioPage() {
           )}
 
           {/* 5 · Impostos & Observações */}
-          <Section n={5} title="Impostos & Observações" open={!!openSec[5]} onToggle={() => toggleSec(5)}
-            subtitle={(() => { const g = ap.taxes.filter((t) => parseBR(t.value) > 0).length; return g > 0 ? `${g} guia${g !== 1 ? "s" : ""} a recolher` : "Guias, retenções e observações" })()}>
+          <Section n={5} title="Impostos a recolher" open={!!openSec[5]} onToggle={() => toggleSec(5)}
+            subtitle={(() => { const g = ap.taxes.filter((t) => parseBR(t.value) > 0).length; return g > 0 ? `${g} guia${g !== 1 ? "s" : ""} a recolher` : "Guias calculadas e retenções do mês" })()}>
+            {isLP && cd.atividade !== "Serviços" && (
+              <label className="block mb-3 md:max-w-xs"><span className="label">ICMS a recolher (R$) <span className="text-[var(--muted)] font-normal">(apuração própria)</span></span>
+                <Money value={cd.icmsRecolher} onChange={(v) => upd("icmsRecolher", v)} /></label>
+            )}
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold flex items-center gap-2 text-sm"><Scale className="h-4 w-4" /> Impostos a recolher</h3>
               <div className="flex gap-2">
@@ -615,7 +657,7 @@ export default function RelatorioPage() {
               </div>
             </div>
             <div className="hidden md:grid grid-cols-12 gap-2 text-[10px] uppercase font-semibold text-[var(--muted)] px-1 mb-1">
-              <div className="col-span-4">Tributo</div><div className="col-span-3">Valor (R$)</div><div className="col-span-3">Vencimento</div><div className="col-span-2" title="Conta na alíquota efetiva e na composição">Carga</div>
+              <div className="col-span-4">Tributo</div><div className="col-span-3">Valor (R$)</div><div className="col-span-3">Vencimento</div><div className="col-span-2" title="Conta na alíquota efetiva e na composição">Conta?</div>
             </div>
             <div className="space-y-2">
               {ap.taxes.filter((t) => !t.manual).map((t, i) => (
@@ -652,10 +694,6 @@ export default function RelatorioPage() {
               </div>
             )}
 
-            <div className="mt-5 pt-4 border-t border-[var(--line)]">
-              <label className="block"><span className="label">Observações &amp; recomendações <span className="text-[var(--muted)] font-normal">(aparecem como seção no relatório)</span></span>
-                <textarea className="input min-h-[90px]" value={cd.observacoes || ""} onChange={(e) => upd("observacoes", e.target.value)} placeholder="Ex.: Lembrar o cliente do reajuste do pró-labore; conferir notas em atraso; etc." /></label>
-            </div>
           </Section>
 
           {/* 6 · Parcelamentos & Pendências */}
@@ -667,7 +705,7 @@ export default function RelatorioPage() {
               <button className="btn btn-outline text-xs px-2 py-1" onClick={addParcela}><Plus className="h-3.5 w-3.5" /> Adicionar</button>
             </div>
             <div className="hidden md:grid grid-cols-12 gap-2 text-[10px] uppercase font-semibold text-[var(--muted)] px-1 mb-1">
-              <div className="col-span-3">Descrição</div><div className="col-span-2">Parcela</div><div className="col-span-3">Valor (R$)</div><div className="col-span-2">Vencimento</div><div className="col-span-2" title="Conta na alíquota efetiva e na composição">Carga</div>
+              <div className="col-span-3">Descrição</div><div className="col-span-2">Parcela</div><div className="col-span-3">Valor (R$)</div><div className="col-span-2">Vencimento</div><div className="col-span-2" title="Conta na alíquota efetiva e na composição">Conta?</div>
             </div>
             <div className="space-y-2">
               {(cd.extraTaxes || []).filter((e) => e.group === "Parcelamento").map((e) => (
@@ -727,6 +765,12 @@ export default function RelatorioPage() {
                 <button className="btn btn-outline mt-1 text-xs px-2 py-1" onClick={() => { colarPendencias(pendPaste); setPendPaste("") }}><ListPlus className="h-3.5 w-3.5" /> Colar pendências</button>
               </div>
             </div>
+          </Section>
+
+          {/* 7 · Observações */}
+          <Section n={7} title="Observações & recomendações" open={!!openSec[7]} onToggle={() => toggleSec(7)}
+            subtitle={cd.observacoes && cd.observacoes.trim() ? "Anotações que entram no relatório" : "Anotações livres (aparecem como seção no relatório)"}>
+            <textarea className="input min-h-[110px]" value={cd.observacoes || ""} onChange={(e) => upd("observacoes", e.target.value)} placeholder="Ex.: Lembrar o cliente do reajuste do pró-labore; conferir notas em atraso; etc." />
           </Section>
 
         </div>
