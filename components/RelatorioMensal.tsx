@@ -7,7 +7,7 @@ import { useMemo } from "react"
 // Apurações grandes (muitos vencimentos/guias) geram páginas de continuação
 // "Agenda Fiscal (cont.)" — nada é cortado. id #rep-overlay e classe .sheet → PDF/print.
 import { ESCRITORIO, TETO_SIMPLES, PARAMETROS_PADRAO, type ParametrosFiscais } from "@/lib/config"
-import { fmtBRL, fmtPct, parseBR, fmtK, fmtKm, atividadeCurta, MONTHS, MONTHS_SHORT } from "@/lib/format"
+import { fmtBRL, fmtNum, fmtPct, parseBR, atividadeCurta, MONTHS, MONTHS_SHORT } from "@/lib/format"
 import { simularComparativo } from "@/lib/engine"
 import type { Apuracao, ClientData, HistPoint, TaxRow } from "@/lib/types"
 
@@ -97,7 +97,7 @@ function Footer({ note }: { note: string }) {
 function Kpi({ k, v, s, hl }: { k: string; v: React.ReactNode; s?: React.ReactNode; hl?: boolean }) {
   return <div className={"kpi" + (hl ? " hl" : "")}><div className="k">{k}</div><div className="v">{v}</div>{s != null && <div className="s">{s}</div>}</div>
 }
-const RS = ({ v }: { v: number }) => <><span className="rs">R$</span>{fmtK(v)}</>
+const RS = ({ v }: { v: number }) => <><span className="rs">R$</span>{fmtNum(v)}</>
 
 /* ----- medidor semicircular ----- */
 function Gauge({ value }: { value: number }) {
@@ -135,13 +135,13 @@ function Donut({ segs, total }: { segs: Seg[]; total: number }) {
   return (
     <div className="fx ac gap16" style={{ flex: 1 }}>
       <div className="donut" style={{ background: `conic-gradient(${stops.join(",")})` }}>
-        <div className="donut-h"><b><span className="dh-rs">R$</span>{fmtKm(total)}</b><small>TOTAL</small></div>
+        <div className="donut-h"><b><span className="dh-rs">R$</span>{fmtNum(total)}</b><small>TOTAL</small></div>
       </div>
       <div className="leg">
         {segs.map((s, i) => (
           <div className="leg-i" key={i}>
             <i style={{ background: COMP_COLORS[i % COMP_COLORS.length] }} /><span className="leg-lab" title={s.label}>{s.label}</span>
-            <span className="leg-v num">{fmtK(s.value)}</span>
+            <span className="leg-v num">{fmtNum(s.value)}</span>
             <span className="leg-p">{((s.value / sum) * 100).toFixed(1).replace(".", ",")}%</span>
           </div>
         ))}
@@ -160,38 +160,6 @@ function CmpRow({ name, cls, w, val }: { name: string; cls: string; w: number; v
   )
 }
 
-// Quadro "Base de cálculo da projeção": mostra, de forma transparente, que a revenda
-// monofásica sai da base de PIS/COFINS e as vendas em ST saem da base de ICMS — as duas
-// receitas já tributadas na origem que a projeção do Lucro Presumido exclui.
-function BaseCalcCard({ bc }: { bc: ReturnType<typeof simularComparativo>["baseCalc"] }) {
-  const temMono = bc.recMonofasica > 0.005
-  const temST = bc.recST > 0.005
-  if (!temMono && !temST) return null // nada segregado → sem exclusão a mostrar
-  const showICMS = bc.comercio && temST
-  return (
-    <>
-      <div className={"bcx" + (showICMS && temMono ? "" : " one")}>
-        {temMono && (
-          <div className="bcx-col">
-            <div className="bcx-tag">PIS / COFINS</div>
-            <div className="bcx-r"><span>Receita bruta</span><span className="num">{fmtBRL(bc.receita)}</span></div>
-            <div className="bcx-r sub"><span>(−) Revenda monofásica</span><span className="num">−{fmtBRL(bc.recMonofasica)}</span></div>
-            <div className="bcx-r base"><span>Base de cálculo</span><span className="num">{fmtBRL(bc.basePisCofins)}</span></div>
-          </div>
-        )}
-        {showICMS && (
-          <div className="bcx-col">
-            <div className="bcx-tag icms">ICMS</div>
-            <div className="bcx-r"><span>Receita de comércio</span><span className="num">{fmtBRL(bc.receitaComercio)}</span></div>
-            <div className="bcx-r sub"><span>(−) Vendas em ST</span><span className="num">−{fmtBRL(bc.recST)}</span></div>
-            <div className="bcx-r base"><span>Base de cálculo</span><span className="num">{fmtBRL(bc.baseICMS)}</span></div>
-          </div>
-        )}
-      </div>
-      <div className="bcx-cap">Produtos <b>monofásicos</b> (PIS/COFINS) e em <b>substituição tributária</b> (ICMS) já foram tributados na origem — por isso saem da base da projeção do Lucro Presumido. O <b>IRPJ e a CSLL</b> presumem sobre a <b>receita bruta total</b>, sem essa exclusão.</div>
-    </>
-  )
-}
 
 function CompTable({ comp }: { comp: ReturnType<typeof simularComparativo> }) {
   if (!comp.simulavel) return <div className="g-note" style={{ maxWidth: "none" }}>Informe RBT12 e o anexo para comparar com o Simples Nacional.</div>
@@ -286,26 +254,11 @@ function DtlRow({ l, sub, v, up }: { l: string; sub: string; v: string; up?: str
 function MetricCard({ k, v, s, up }: { k: string; v: string; s?: string; up?: string }) {
   return <div className="dcard"><div className="dc-k">{k}</div><div className="dc-v">{v}{up && <span className="dc-up">{up}</span>}</div>{s && <div className="dc-s">{s}</div>}</div>
 }
-// Barra dividida em parte tributável × parte já tributada na origem (monofásico no
-// PIS/COFINS, ST no ICMS). Reutilizada em dois enquadramentos: "Segregação da receita"
-// (fato, na página de atividades) e "Base de cálculo da projeção" (no comparativo LP).
-function SplitBar({ tag, tagCls, topLabel, base, baseW, excl, exclLabel, baseLegend, exclLegend }: { tag: string; tagCls?: string; topLabel: string; base: number; baseW: number; excl: number; exclLabel: string; baseLegend: string; exclLegend: string }) {
-  return (
-    <div className="dbx">
-      <div className="dbx-top"><span className={"dbx-tag" + (tagCls ? " " + tagCls : "")}>{tag}</span><span className="dbx-base">{topLabel}<b>{fmtBRL(base)}</b></span></div>
-      <div className="dbx-split">
-        {baseW >= 4 && <u className="dbx-b" style={{ width: `${baseW.toFixed(1)}%` }}>{baseW >= 32 ? fmtBRL(base) : `${baseW.toFixed(0)}%`}</u>}
-        <u className="dbx-x" style={{ width: `${(100 - baseW).toFixed(1)}%` }}>{exclLabel} · {fmtBRL(excl)}</u>
-      </div>
-      <div className="dbx-lg"><span><i className="dbx-di b" />{baseLegend}</span><span><i className="dbx-di x" />{exclLegend}</span></div>
-    </div>
-  )
-}
 function GoldEconomia({ economiaMes, sub, note }: { economiaMes: number; sub?: string; note?: React.ReactNode }) {
   return (
     <div className="goldpanel">
       <div className="gp-l">
-        <div className="gp-big"><span className="rs" style={{ fontSize: 16 }}>R$</span><span className="n">{fmtK(economiaMes)}</span>/mês</div>
+        <div className="gp-big"><span className="rs" style={{ fontSize: 16 }}>R$</span><span className="n">{fmtNum(economiaMes)}</span>/mês</div>
         {sub && <div className="gp-sub">{sub}</div>}
       </div>
       {note && <div className="gp-note">{note}</div>}
@@ -471,10 +424,6 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
   const ativValTot = ativs.reduce((s, a) => s + a.valor, 0)
   // Segregação (comércio) p/ a página "Receita por Atividade": barras de base
   // divididas em parte tributável × parte excluída (monofásico no PIS/COFINS, ST no ICMS).
-  const bcAtiv = comp.baseCalc
-  const temSegAtiv = bcAtiv.recMonofasica > 0.005 || bcAtiv.recST > 0.005
-  const pcBaseW = bcAtiv.receita > 0 ? Math.max(0, Math.min(100, (bcAtiv.basePisCofins / bcAtiv.receita) * 100)) : 0
-  const icmsBaseW = bcAtiv.receitaComercio > 0 ? Math.max(0, Math.min(100, (bcAtiv.baseICMS / bcAtiv.receitaComercio) * 100)) : 0
   const pgComp = showComp ? 2 : 0
   const pgAtiv = showAtiv ? 2 + (showComp ? 1 : 0) : 0
   const pgAgenda = 2 + (showComp ? 1 : 0) + (showAtiv ? 1 : 0)
@@ -666,7 +615,7 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
                 <div className="cmp-hero-sub">{comp.melhor === comp.atual ? "regime atual da empresa" : "frente ao regime atual"}</div>
               </div>
               <div className="cmp-hero-r">
-                <div className="cmp-hero-eco"><span className="rs">R$</span>{fmtK(comp.economia)}<small>/mês</small></div>
+                <div className="cmp-hero-eco"><span className="rs">R$</span>{fmtNum(comp.economia)}<small>/mês</small></div>
                 <div className="cmp-hero-sub">{comp.melhor === comp.atual ? `de economia vs. ${outroRegime}` : `a menos que o regime atual`}</div>
               </div>
             </div>
@@ -677,19 +626,6 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
               </div>
               {comp.estimado && <div className="cmp-est">O ICMS do Lucro Presumido foi {isSN ? <>estimado em <b>{fmtPct(parseBR(cd.icmsCompPct))}</b> sobre as vendas tributáveis — projeção; o ICMS real só se apura já no Lucro Presumido.</> : <>o <b>ICMS informado</b> na apuração.</>}</div>}
             </div>
-            {(comp.baseCalc.recMonofasica > 0.005 || comp.baseCalc.recST > 0.005) && (
-              <div className="sec"><Slab>Base de cálculo da projeção</Slab>
-                <div className="segwrap">
-                  {comp.baseCalc.recMonofasica > 0.005 && (
-                    <SplitBar tag="PIS / COFINS" topLabel="Base de cálculo" base={comp.baseCalc.basePisCofins} baseW={pcBaseW} excl={comp.baseCalc.recMonofasica} exclLabel="Revenda monofásica" baseLegend="Base tributável" exclLegend="Monofásica — fora da base" />
-                  )}
-                  {comp.baseCalc.comercio && comp.baseCalc.recST > 0.005 && (
-                    <SplitBar tag="ICMS" tagCls="icms" topLabel="Base de cálculo" base={comp.baseCalc.baseICMS} baseW={icmsBaseW} excl={comp.baseCalc.recST} exclLabel="Vendas em ST" baseLegend="Base tributável" exclLegend="ST — fora da base" />
-                  )}
-                </div>
-                <div className="bcx-cap">Produtos <b>monofásicos</b> (PIS/COFINS) e em <b>substituição tributária</b> (ICMS) já foram tributados na origem — por isso saem da base da projeção do Lucro Presumido. O <b>IRPJ e a CSLL</b> presumem sobre a receita bruta total.</div>
-              </div>
-            )}
             <div className="sec" style={{ flex: 1 }}><Slab>Detalhamento tributo a tributo</Slab>
               <CompTable comp={comp} />
             </div>
@@ -735,17 +671,6 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
                     <div className="ait-nums"><div className="ait-v">{fmtBRL(ativRecTot)}</div><div className="ait-p">100%</div></div>
                   </div>
                 </div>
-                {temSegAtiv && (
-                  <div className="segwrap">
-                    <div className="slab" style={{ marginBottom: 2 }}><span style={{ color: "var(--muted)", letterSpacing: ".16em" }}>Segregação da receita</span></div>
-                    {bcAtiv.recMonofasica > 0.005 && (
-                      <SplitBar tag="PIS / COFINS" topLabel="Tributável" base={bcAtiv.basePisCofins} baseW={pcBaseW} excl={bcAtiv.recMonofasica} exclLabel="Revenda monofásica" baseLegend="Receita tributável" exclLegend="Monofásica — tributada na origem" />
-                    )}
-                    {bcAtiv.comercio && bcAtiv.recST > 0.005 && (
-                      <SplitBar tag="ICMS" tagCls="icms" topLabel="Tributável" base={bcAtiv.baseICMS} baseW={icmsBaseW} excl={bcAtiv.recST} exclLabel="Vendas em ST" baseLegend="Receita tributável" exclLegend="ST — tributada na origem" />
-                    )}
-                  </div>
-                )}
               </div>
               <div className="atbl-foot">{isSN
                 ? <>Receita e participação por atividade. O <b>total do DAS</b> é o valor oficial do PGDAS-D, já líquido de ICMS-ST e PIS/COFINS monofásico.</>
@@ -810,7 +735,7 @@ export function RelatorioMensal({ cd, ap, evolution, params = PARAMETROS_PADRAO 
                   <div className="pend-hero-k">Total de débitos em aberto</div>
                   <div className="pend-hero-sub">{pendencias.length} débito{pendencias.length !== 1 ? "s" : ""}{pendComGuia > 0 ? ` · ${pendComGuia} com guia emitida (no total do mês)` : " · informativo — não compõem o total do mês"}</div>
                 </div>
-                <div className="pend-hero-v"><span className="rs">R$</span>{fmtK(pendTotal)}</div>
+                <div className="pend-hero-v"><span className="rs">R$</span>{fmtNum(pendTotal)}</div>
               </div>
             )}
             <div className="sec" style={{ flex: 1 }}><Slab>Relação de débitos</Slab>
@@ -934,7 +859,7 @@ const STYLE = `
 .gn-doc .kpi.hl{background:var(--green-dk);border-color:var(--green-dk)}
 .gn-doc .kpi .k{font:500 8px var(--font-jost);letter-spacing:.15em;text-transform:uppercase;color:var(--gold);margin-bottom:9px}
 .gn-doc .kpi.hl .k{color:#c9a85a}
-.gn-doc .kpi .v{font:600 22px var(--font-jost);color:var(--num);line-height:1;font-variant-numeric:tabular-nums}
+.gn-doc .kpi .v{font:600 22px var(--font-jost);color:var(--num);line-height:1.25;font-variant-numeric:tabular-nums;white-space:nowrap}
 .gn-doc .kpi.hl .v{color:#f5f1e6}
 .gn-doc .rs{font-size:.62em;font-weight:500;color:var(--muted);margin-right:2px}
 .gn-doc .kpi.hl .rs{color:#b9c0a3}
@@ -951,7 +876,7 @@ const STYLE = `
 .gn-doc .g-note{font:400 10px/1.5 var(--font-plex);color:var(--muted);margin-top:13px;text-align:center;max-width:74mm;align-self:center}
 .gn-doc .donut{width:122px;height:122px;border-radius:50%;position:relative;flex:none}
 .gn-doc .donut-h{position:absolute;inset:22px;background:var(--card);border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 6px}
-.gn-doc .donut-h b{font:600 16px var(--font-jost);color:var(--num);line-height:1;white-space:nowrap}
+.gn-doc .donut-h b{font:600 16px var(--font-jost);color:var(--num);line-height:1.25;white-space:nowrap}
 .gn-doc .donut-h .dh-rs{font-size:.6em;font-weight:500;color:var(--muted);margin-right:2px}
 .gn-doc .donut-h small{font:500 7.5px var(--font-jost);letter-spacing:.18em;color:var(--muted);margin-top:3px}
 .gn-doc .leg{display:flex;flex-direction:column;gap:11px;flex:1}
@@ -1028,9 +953,9 @@ const STYLE = `
 .gn-doc .vd{font:700 17px var(--font-jost);color:var(--num);line-height:.82;text-align:center;flex:none;min-width:24px}
 .gn-doc .vd small{display:block;font:500 7px var(--font-jost);letter-spacing:.08em;color:var(--muted);margin-top:3px}
 .gn-doc .vx{flex:1;min-width:0}
-.gn-doc .vn{font:600 11px var(--font-plex);color:#334023;line-height:1.2}
+.gn-doc .vn{font:600 11px var(--font-plex);color:#334023;line-height:1.3}
 .gn-doc .vsub{font:400 8.5px var(--font-plex);color:var(--muted);margin-top:2px}
-.gn-doc .vv{font:700 12.5px var(--font-jost);color:var(--num);font-variant-numeric:tabular-nums;flex:none}
+.gn-doc .vv{font:700 12.5px var(--font-jost);color:var(--num);font-variant-numeric:tabular-nums;flex:none;white-space:nowrap;line-height:1.3}
 .gn-doc .vtag{font:600 7.5px var(--font-jost);letter-spacing:.08em;text-transform:uppercase;color:var(--gold);flex:none}
 .gn-doc .vrow.tot .vd,.gn-doc .vrow.tot .vn,.gn-doc .vrow.tot .vv{color:#f5f1e6}
 .gn-doc .vrow.tot .vd small,.gn-doc .vrow.tot .vsub{color:#b9c0a3}
@@ -1097,10 +1022,10 @@ const STYLE = `
 .gn-doc .gm-chip.parc{color:#9c7a22;background:#f3e9d2}
 .gn-doc .gm-chip.pend{color:#a23a2e;background:#fbeae7}
 .gn-doc .gm-main{min-width:0}
-.gn-doc .gm-tax{font:500 11px var(--font-plex);color:#334023;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gn-doc .gm-tax{font:500 11px var(--font-plex);line-height:1.4;color:#334023;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .gn-doc .gm-pc{font-weight:400;color:var(--muted)}
 .gn-doc .gm-sub{font:400 8.5px var(--font-plex);color:var(--muted);margin-top:2px}
-.gn-doc .gm-val{font:700 12px var(--font-jost);color:var(--num);text-align:right;font-variant-numeric:tabular-nums}
+.gn-doc .gm-val{font:700 12px var(--font-jost);color:var(--num);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;line-height:1.35}
 .gn-doc .gm-more{padding:7px 16px;border-top:1px solid var(--bd2);background:#faf8f1;color:var(--muted);font:400 9px var(--font-plex);text-align:center}
 .gn-doc .gm-totrow{display:flex;justify-content:space-between;align-items:center;padding:11px 18px;background:var(--green-dk)}
 .gn-doc .gm-totrow .l{font:600 9px var(--font-jost);letter-spacing:.16em;text-transform:uppercase;color:#c9a85a}
