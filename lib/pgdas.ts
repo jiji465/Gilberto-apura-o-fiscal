@@ -31,6 +31,12 @@ export interface PgdasSegregacao {
   issTotal: number
   pisCofinsMonofasico: number
   pisCofinsNormal: number
+  /** Receita das parcelas monofásicas (PIS/COFINS zero na revenda) — excluída da base
+   *  de PIS/COFINS do Lucro Presumido. Soma por parcela, mesmo na atividade única. */
+  receitaMonofasica: number
+  /** Receita das parcelas em ICMS-ST (imposto já recolhido) — excluída da base de ICMS
+   *  do Lucro Presumido. */
+  receitaST: number
 }
 
 export interface PgdasResult {
@@ -185,8 +191,12 @@ export function parsePGDAS(raw: string): PgdasResult | null {
     const receitaST = fmtNum(temParcela ? recStParc : (subST ? parseBR(receitaBruta) : 0))
     // Anexo da atividade pela repartição: ISS→serviços, IPI→indústria (II), ICMS→comércio (I).
     // Serviço: se o extrato já indicou Anexo IV ou V (Fator R), respeita; senão III.
+    // Comércio 100% em ICMS-ST aparece com ICMS=0 na repartição (o débito próprio some, pois
+    // o imposto já foi recolhido por ST); ainda é COMÉRCIO/Anexo I — detecta pela ST de ICMS
+    // ou pela descrição "revenda de mercadorias", senão distribuidoras caem no default Serviços.
     const anexoServ = f.anexo === "Anexo IV" || f.anexo === "Anexo V" ? f.anexo : "Anexo III"
-    const anexo = parseBR(rp.repart.ISS) > 0 ? anexoServ : parseBR(rp.repart.IPI) > 0 ? "Anexo II" : parseBR(rp.repart.ICMS) > 0 ? "Anexo I" : undefined
+    const ehRevenda = subST || /revenda\s+de\s+mercadorias/i.test(descricao)
+    const anexo = parseBR(rp.repart.ISS) > 0 ? anexoServ : parseBR(rp.repart.IPI) > 0 ? "Anexo II" : parseBR(rp.repart.ICMS) > 0 ? "Anexo I" : ehRevenda ? "Anexo I" : undefined
     // Guarda o rótulo ENXUTO (o texto do PGDAS-D é longo e cheio de jargão); a
     // descrição completa já foi usada acima p/ detectar ST/monofásico.
     atividades.push({ descricao: atividadeCurta(descricao), receita: receitaBruta, repart: rp.repart, total: rp.total, substituicaoICMS: subST, monofasica: mono, anexo, receitaMonofasica, receitaST })
@@ -204,12 +214,17 @@ export function parsePGDAS(raw: string): PgdasResult | null {
   if (!Object.keys(repart).length) return null
 
   const issN = parseBR(repart.ISS), ipiN = parseBR(repart.IPI), icmsN = parseBR(repart.ICMS)
-  // Atividade e anexo default CONSISTENTES entre si (issN→Serviços/III, ipiN→Indústria/II,
-  // icmsN→Comércio/I; all-zero → Serviços/III).
-  f.atividade = issN > 0 ? "Serviços" : ipiN > 0 ? "Indústria" : icmsN > 0 ? "Comércio" : "Serviços"
-  if (!f.anexo) f.anexo = ipiN > 0 ? "Anexo II" : icmsN > 0 ? "Anexo I" : "Anexo III"
+  // Comércio/indústria com ICMS/IPI 100% em ST aparece ZERADO na repartição oficial; detecta
+  // pelo anexo inferido por atividade (que já considera ST e "revenda de mercadorias") para
+  // não cair no default "Serviços/Anexo III" — típico de distribuidoras (bebidas, etc.).
+  const temComercio = icmsN > 0 || atividades.some((a) => a.anexo === "Anexo I")
+  const temIndustria = ipiN > 0 || atividades.some((a) => a.anexo === "Anexo II")
+  // Atividade e anexo default CONSISTENTES entre si (issN→Serviços/III, indústria→II,
+  // comércio→I; all-zero → Serviços/III).
+  f.atividade = issN > 0 ? "Serviços" : temIndustria ? "Indústria" : temComercio ? "Comércio" : "Serviços"
+  if (!f.anexo) f.anexo = temIndustria ? "Anexo II" : temComercio ? "Anexo I" : "Anexo III"
 
-  const seg: PgdasSegregacao = { icmsNormal: 0, icmsST: 0, issTotal: issN, pisCofinsMonofasico: 0, pisCofinsNormal: 0 }
+  const seg: PgdasSegregacao = { icmsNormal: 0, icmsST: 0, issTotal: issN, pisCofinsMonofasico: 0, pisCofinsNormal: 0, receitaMonofasica: 0, receitaST: 0 }
   if (atividades.length) {
     for (const a of atividades) {
       const icms = parseBR(a.repart.ICMS)
@@ -218,6 +233,10 @@ export function parsePGDAS(raw: string): PgdasResult | null {
       else seg.icmsNormal += icms
       if (a.monofasica) seg.pisCofinsMonofasico += pisCofins
       else seg.pisCofinsNormal += pisCofins
+      // Receitas segregadas por PARCELA (precisas): base do que NÃO puxa p/ o Lucro
+      // Presumido — monofásico (PIS/COFINS zero) e ICMS-ST (ICMS já recolhido).
+      seg.receitaMonofasica += parseBR(a.receitaMonofasica)
+      seg.receitaST += parseBR(a.receitaST)
     }
   } else {
     seg.icmsNormal = icmsN

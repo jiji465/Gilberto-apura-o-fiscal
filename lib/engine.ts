@@ -421,9 +421,11 @@ export function computeApuracao(cd: ClientData, params: ParametrosFiscais = PARA
     // no PGDAS-D — torna a projeção exata sem digitar nada a mais.
     // Receita monofásica: usa o valor por parcela (preciso) quando disponível; senão cai
     // no flag da atividade inteira (entrada manual / rascunhos antigos sem o campo).
+    // Atividade ÚNICA (sem tabela por atividade): usa o total segregado guardado do
+    // PGDAS-D (segReceitaMono) — assim a revenda monofásica também é excluída da base.
     const recMonofasica = multiAtiv
       ? atividadesIn.reduce((s, a) => s + (a.receitaMonofasica ? parseBR(a.receitaMonofasica) : (a.monofasica ? parseBR(a.receita) : 0)), 0)
-      : 0
+      : Math.max(0, cd.segReceitaMono || 0)
     const basePisCofins = Math.max(0, revenue - recMonofasica)
     const monoNota = recMonofasica > 0 ? ` • base líquida de monofásico (−${fmtNum(recMonofasica)})` : ""
     pushLP("PIS", basePisCofins, params.pisCumulativo, basePisCofins * (params.pisCumulativo / 100), `Regime cumulativo (${params.pisCumulativo.toFixed(2).replace(".", ",")}%)${monoNota}`, "PIS/COFINS")
@@ -731,13 +733,19 @@ export function simularComparativo(cd: ClientData, ap: Apuracao, params: Paramet
   const recComercio = ativsCmp.length
     ? ativsCmp.filter((a) => (a.tipo || ativDoAnexo(a.anexo)) !== "Serviços").reduce((s, a) => s + parseBR(a.receita), 0)
     : (ehServico ? 0 : ap.revenue)
-  // Receita em ST (por parcela quando disponível; senão a atividade inteira se marcada).
-  const recST = ativsCmp.reduce((s, a) => s + (a.receitaST ? parseBR(a.receitaST) : (a.substituicaoICMS ? parseBR(a.receita) : 0)), 0)
+  // Receita em ST e monofásica: por parcela quando há tabela por atividade; na atividade
+  // ÚNICA, usa o total segregado guardado do PGDAS-D (segReceitaST/segReceitaMono) — assim
+  // ICMS-ST e monofásico também são excluídos das bases sem precisar de tabela por atividade.
+  const recST = ativsCmp.length
+    ? ativsCmp.reduce((s, a) => s + (a.receitaST ? parseBR(a.receitaST) : (a.substituicaoICMS ? parseBR(a.receita) : 0)), 0)
+    : Math.max(0, cd.segReceitaST || 0)
   const baseICMS = Math.max(0, recComercio - recST)
   // Receita monofásica (revenda PIS/COFINS zero) — mesma lógica por parcela usada em
   // computeApuracao, para o quadro de "base de cálculo" refletir EXATAMENTE a base que
   // a projeção do Lucro Presumido usa no PIS/COFINS.
-  const recMonofasica = ativsCmp.reduce((s, a) => s + (a.receitaMonofasica ? parseBR(a.receitaMonofasica) : (a.monofasica ? parseBR(a.receita) : 0)), 0)
+  const recMonofasica = ativsCmp.length
+    ? ativsCmp.reduce((s, a) => s + (a.receitaMonofasica ? parseBR(a.receitaMonofasica) : (a.monofasica ? parseBR(a.receita) : 0)), 0)
+    : Math.max(0, cd.segReceitaMono || 0)
   const basePisCofins = Math.max(0, ap.revenue - recMonofasica)
   const icmsLP = isLP && parseBR(cd.icmsRecolher) > 0 ? parseBR(cd.icmsRecolher) : baseICMS * (parseBR(cd.icmsCompPct) / 100)
   const apS = isSN ? ap : computeApuracao({ ...base, regime: "Simples Nacional", anexo: cd.anexo || "Anexo III" }, params)

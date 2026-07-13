@@ -3,7 +3,7 @@
 // 2026 na isenção/redutor, vencimentos (antecipa × prorroga, trimestral) e uma
 // apuração ponta-a-ponta já validada no app. Rodar: `pnpm test`.
 import { describe, it, expect } from "vitest"
-import { calcSN, calcFatorR, anexoEfetivo, calcIRRF2026, dueDate, computeApuracao, feriadosNacionais } from "./engine"
+import { calcSN, calcFatorR, anexoEfetivo, calcIRRF2026, dueDate, computeApuracao, simularComparativo, feriadosNacionais } from "./engine"
 import { difalMASNPercent } from "./config"
 import { parseBR } from "./format"
 import type { ClientData } from "./types"
@@ -187,5 +187,47 @@ describe("computeApuracao — caso-âncora (Simples serviços, Fator R atingido)
     expect(comParc.totPagar).toBeCloseTo(1_830, 2) // 1.330 + 500
     expect(comParc.totPagarMes).toBeCloseTo(1_330, 2) // inalterado
     expect(comParc.aliqEfetiva).toBeCloseTo(8.75, 2) // inalterado
+  })
+})
+
+describe("simularComparativo — comércio ST/monofásico NÃO puxa p/ o Lucro Presumido (atividade única)", () => {
+  // Distribuidora de bebidas importada do PGDAS-D: atividade única (sem tabela por
+  // atividade), receita 44.114 com 44.114 em ICMS-ST e 42.988 em monofásico de PIS/COFINS.
+  // O DAS oficial (1.559,43) prevalece no Simples; a projeção do LP deve excluir ST e
+  // monofásico das bases (senão superestima ICMS e PIS/COFINS).
+  const cd: ClientData = {
+    regime: "Simples Nacional",
+    atividade: "Comércio",
+    anexo: "Anexo I",
+    compMonth: "6",
+    compYear: "2026",
+    revenue: "44.114,00",
+    rbt12: "528.600,95",
+    dasOfficial: "1.559,43",
+    repartManual: { IRPJ: "166,88", CSLL: "106,19", COFINS: "9,87", "PIS/PASEP": "2,14", CPP: "1.274,35", ICMS: "0,00", IPI: "0,00", ISS: "0,00" },
+    segReceitaST: 44_114,
+    segReceitaMono: 42_988,
+    ret: {},
+    extraTaxes: [],
+  }
+
+  it("a base de PIS/COFINS exclui o monofásico e a de ICMS exclui a ST", () => {
+    const ap = computeApuracao(cd)
+    const comp = simularComparativo(cd, ap)
+    // 44.114 − 42.988 = 1.126 de base de PIS/COFINS; ICMS zerado (tudo em ST).
+    expect(comp.baseCalc.basePisCofins).toBeCloseTo(1_126, 2)
+    expect(comp.baseCalc.baseICMS).toBeCloseTo(0, 2)
+    expect(comp.baseCalc.recMonofasica).toBeCloseTo(42_988, 2)
+    expect(comp.baseCalc.recST).toBeCloseTo(44_114, 2)
+  })
+
+  it("com as bases corretas, o Lucro Presumido fica MAIS barato que o Simples", () => {
+    const ap = computeApuracao(cd)
+    const comp = simularComparativo(cd, ap)
+    // LP = PIS 7,32 + COFINS 33,78 + IRPJ (8%×15%) 529,37 + CSLL (12%×9%) 476,43 = 1.046,90
+    expect(comp.totalPresumido).toBeCloseTo(1_046.90, 1)
+    expect(comp.totalSimples).toBeCloseTo(1_559.43, 2)
+    expect(comp.melhor).toBe("Lucro Presumido")
+    expect(comp.simulavel).toBe(true)
   })
 })

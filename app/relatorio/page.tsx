@@ -312,6 +312,8 @@ export default function RelatorioPage() {
       segIcmsST: res.seg?.icmsST || 0,
       segIcmsNormal: res.seg?.icmsNormal || 0,
       segPisCofinsMono: res.seg?.pisCofinsMonofasico || 0,
+      segReceitaMono: res.seg?.receitaMonofasica || 0,
+      segReceitaST: res.seg?.receitaST || 0,
     }))
     toastSuccess(`Identificado: ${f.clientName || "empresa"} • ${comp || ""} • DAS ${f.dasOfficial ? "R$ " + f.dasOfficial : ""}`)
     const seg = res.seg
@@ -323,9 +325,12 @@ export default function RelatorioPage() {
     }
     res.warnings?.forEach((w) => toastWarning(w))
     // Comércio/indústria: o comparativo com o Lucro Presumido precisa do ICMS efetivo,
-    // que NÃO vem no PGDAS-D (o ICMS do DAS é o do Simples). Avisa onde informar.
+    // que NÃO vem no PGDAS-D (o ICMS do DAS é o do Simples). Avisa onde informar — mas só
+    // se houver base de ICMS tributável (receita de comércio fora da ST); quando tudo é
+    // ICMS-ST (ex.: distribuidora de bebidas), o ICMS próprio é ~zero e não precisa do %.
     const ativImp = (f.atividade as string) || (f.anexo === "Anexo I" ? "Comércio" : f.anexo === "Anexo II" ? "Indústria" : "Serviços")
-    if (ativImp !== "Serviços" && !parseBR(cd.icmsCompPct)) {
+    const baseICMSImp = ativImp !== "Serviços" ? Math.max(0, parseBR(f.revenue || "") - (seg?.receitaST || 0)) : 0
+    if (baseICMSImp > 0.005 && !parseBR(cd.icmsCompPct)) {
       toastWarning("Para comparar com o Lucro Presumido, informe o ICMS efetivo (%) no painel “Projeção Lucro Presumido”. O ICMS não vem no PGDAS-D.")
     }
     return true

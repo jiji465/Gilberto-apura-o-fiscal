@@ -79,6 +79,12 @@ export interface ClientData {
   segIcmsST?: number
   segIcmsNormal?: number
   segPisCofinsMono?: number
+  /** Receita das parcelas monofásicas (PIS/COFINS zero) — NÃO entra na base de PIS/COFINS
+   *  do Lucro Presumido. Guardado no topo p/ valer também na atividade única (sem tabela). */
+  segReceitaMono?: number
+  /** Receita das parcelas em ICMS-ST (ICMS já recolhido) — NÃO entra na base de ICMS do
+   *  Lucro Presumido. Guardado no topo p/ valer também na atividade única. */
+  segReceitaST?: number
   // opcionais do relatório
   numNotas?: string
   observacoes?: string
